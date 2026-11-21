@@ -441,7 +441,17 @@ whose values are unchanged by translation by elements of k. -/
 theorem mem_modulatedCompactSupportStage_iff (f : E) :
     f ∈ modulatedCompactSupportStage m B k ↔
       f ∈ modulatedCompactSupportSubmodule m B ∧
-        ∀ (x : G) (u : k), f.val (u.val * x) = f.val x := by sorry
+        ∀ (x : G) (u : k), f.val (u.val * x) = f.val x := by
+  have htwist (x : G) : twist₀ f x = f.val x :=
+    (modulatedExponentialDecayTwist_apply m Set.univ zeroUniv f x).trans
+      ((congrArg (fun r : ℝ ↦ (r : ℂ) * f.val x) (Real.rpow_zero _)).trans
+        ((congrArg (· * f.val x) Complex.ofReal_one).trans (one_mul _)))
+  change f ∈ modulatedCompactSupportSubmodule m B ∧
+    twist₀ f ∈ schwartzBruhatInvariantSubmodule k ↔ _
+  refine and_congr_right fun _ ↦
+    (mem_schwartzBruhatInvariantSubmodule_iff k (twist₀ f)).trans ?_
+  exact forall_congr' fun x ↦ forall_congr' fun u ↦ iff_of_eq (congrArg₂ Eq
+    ((htwist (x * u.val)).trans (congrArg f.val (mul_comm x u.val))) (htwist x))
 
 variable (hk : IsCompact (k : Set G))
 variable (hperp : IsCompactlyGeneratedGroup (lcaAnnihilator (k.comap m.toMonoidHom.ker.subtype)))
