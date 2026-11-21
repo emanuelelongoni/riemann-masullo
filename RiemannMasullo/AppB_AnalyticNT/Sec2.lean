@@ -1924,7 +1924,96 @@ theorem mellin_heightBound_left_of_exponentialDecay
 t > 1, its Mellin transform belongs to each left half-plane Hardy class with p ≥ 1. -/
 theorem memLeftHardy_mellin_of_exponentialDecay
     (hSupport : tsupport (f : ℝ → ℂ) ⊆ Ioi 0) (b p : ℝ) (hp : 1 ≤ p) :
-    MemLeftHardy (mellin (fromLog f)) b p := by sorry
+    MemLeftHardy (mellin (fromLog f)) b p := by
+  have hp0 : 0 < p := zero_lt_one.trans_le hp
+  have hcont : Continuous (mellin (fromLog f)) :=
+    (differentiable_mellin_of_exponentialDecay f hf).continuous
+  refine ⟨hp0, (differentiable_mellin_of_exponentialDecay f hf).differentiableOn, ?_⟩
+  -- A bound at every height: on the support the weight `exp (b x)` dominates `exp (σ x)`.
+  have hInt : Integrable (fun x : ℝ ↦ Complex.exp ((b : ℂ) * x) * f x) :=
+    integrable_cexp_mul_of_exponentialDecay f hf b
+  obtain ⟨K, hK⟩ : ∃ K : ℝ, K = ∫ x : ℝ, ‖Complex.exp ((b : ℂ) * x) * f x‖ := ⟨_, rfl⟩
+  have hK0 : 0 ≤ K := by
+    rw [hK]
+    exact integral_nonneg fun x ↦ norm_nonneg _
+  have hsup (σ : ℝ) (hσ : σ ≤ b) (y : ℝ) :
+      ‖mellin (fromLog f) ((σ : ℂ) + (y : ℂ) * Complex.I)‖ ≤ K := by
+    rw [mellin_fromLog_eq_integral_exp, hK]
+    refine (norm_integral_le_integral_norm _).trans (integral_mono_of_nonneg
+      (Eventually.of_forall fun x ↦ norm_nonneg _) hInt.norm (Eventually.of_forall fun x ↦ ?_))
+    change ‖Complex.exp (((σ : ℂ) + (y : ℂ) * Complex.I) * (x : ℂ)) * f x‖ ≤
+      ‖Complex.exp ((b : ℂ) * (x : ℂ)) * f x‖
+    have h1 : (((σ : ℂ) + (y : ℂ) * Complex.I) * (x : ℂ)).re = σ * x := by simp
+    have h2 : ((b : ℂ) * (x : ℂ)).re = b * x := by simp
+    rw [norm_mul, norm_mul, Complex.norm_exp, Complex.norm_exp, h1, h2]
+    by_cases hx : f x = 0
+    · rw [hx, norm_zero, mul_zero, mul_zero]
+    · have hxpos : 0 < x := hSupport (subset_tsupport _ hx)
+      exact mul_le_mul_of_nonneg_right
+        (Real.exp_le_exp.mpr (mul_le_mul_of_nonneg_right hσ hxpos.le)) (norm_nonneg _)
+  -- Together with the inverse-square height bound this gives one integrable majorant.
+  obtain ⟨C, hC, hBound⟩ :=
+    mellin_heightBound_left_of_exponentialDecay f hf hSupport b 2 one_le_two
+  obtain ⟨D, hD⟩ : ∃ D : ℝ, D = 2 * K + 2 * C := ⟨_, rfl⟩
+  have hD0 : 0 < D := by
+    rw [hD]
+    linarith
+  have hpt (σ : ℝ) (hσ : σ ≤ b) (y : ℝ) :
+      ‖mellin (fromLog f) ((σ : ℂ) + (y : ℂ) * Complex.I)‖ ≤ D * (1 + y ^ 2)⁻¹ := by
+    have hy2 : (0 : ℝ) < 1 + y ^ 2 := by positivity
+    obtain ⟨N, hN⟩ :
+        ∃ N : ℝ, N = ‖mellin (fromLog f) ((σ : ℂ) + (y : ℂ) * Complex.I)‖ := ⟨_, rfl⟩
+    have hN0 : 0 ≤ N := by
+      rw [hN]
+      exact norm_nonneg _
+    rw [← hN, ← div_eq_mul_inv, le_div_iff₀ hy2, hD]
+    by_cases hy : |y| ≤ 1
+    · have h1 : y ^ 2 ≤ 1 := by
+        rw [← sq_abs]
+        exact pow_le_one₀ (abs_nonneg y) hy
+      have h2 : N ≤ K := by
+        rw [hN]
+        exact hsup σ hσ y
+      nlinarith [mul_nonneg hN0 (sub_nonneg.mpr h1)]
+    · have hy1 : 1 < |y| := not_le.mp hy
+      have hy0 : y ≠ 0 := by
+        intro h
+        rw [h, abs_zero] at hy1
+        linarith
+      have h1 : 1 ≤ y ^ 2 := by
+        rw [← sq_abs]
+        exact one_le_pow₀ hy1.le
+      have hysq : (0 : ℝ) < y ^ 2 := by positivity
+      have h2 : N * y ^ 2 ≤ C := by
+        have h := hBound σ hσ y hy0
+        rw [sq_abs] at h
+        rw [hN]
+        exact (le_div_iff₀ hysq).mp h
+      nlinarith [mul_nonneg hN0 (sub_nonneg.mpr h1)]
+  -- The majorant lies in every `Lᵖ` with `p ≥ 1`, since it is at most `D ^ p / (1 + y ^ 2)`.
+  have hGcont : Continuous (fun y : ℝ ↦ D * (1 + y ^ 2)⁻¹) :=
+    continuous_const.mul ((continuous_const.add (continuous_pow 2)).inv₀
+      fun y ↦ (by positivity : (0 : ℝ) < 1 + y ^ 2).ne')
+  have hGmem : MemLp (fun y : ℝ ↦ D * (1 + y ^ 2)⁻¹) (ENNReal.ofReal p) volume := by
+    refine (integrable_norm_rpow_iff hGcont.aestronglyMeasurable
+      (ENNReal.ofReal_pos.mpr hp0).ne' ENNReal.ofReal_ne_top).mp ?_
+    rw [ENNReal.toReal_ofReal hp0.le]
+    refine (integrable_inv_one_add_sq.const_mul (D ^ p)).mono'
+      (hGcont.norm.rpow_const fun y ↦ Or.inr hp0.le).aestronglyMeasurable
+      (Eventually.of_forall fun y ↦ ?_)
+    have hy2 : (0 : ℝ) < 1 + y ^ 2 := by positivity
+    have hinv0 : 0 ≤ (1 + y ^ 2)⁻¹ := inv_nonneg.mpr hy2.le
+    have hinv1 : (1 + y ^ 2)⁻¹ ≤ 1 := inv_le_one_of_one_le₀ (by linarith [sq_nonneg y])
+    change ‖‖D * (1 + y ^ 2)⁻¹‖ ^ p‖ ≤ D ^ p * (1 + y ^ 2)⁻¹
+    rw [Real.norm_of_nonneg (Real.rpow_nonneg (norm_nonneg _) _),
+      Real.norm_of_nonneg (mul_nonneg hD0.le hinv0), Real.mul_rpow hD0.le hinv0]
+    exact mul_le_mul_of_nonneg_left (Real.rpow_le_self_of_le_one hinv0 hinv1 hp)
+      (Real.rpow_nonneg hD0.le _)
+  refine ⟨(eLpNorm (fun y : ℝ ↦ D * (1 + y ^ 2)⁻¹) (ENNReal.ofReal p) volume).toNNReal,
+    fun σ hσ ↦ ?_⟩
+  rw [ENNReal.coe_toNNReal hGmem.eLpNorm_ne_top]
+  have hline : Continuous (fun y : ℝ ↦ (σ : ℂ) + (y : ℂ) * Complex.I) := by fun_prop
+  exact eLpNorm_mono_real (hcont.comp hline).aestronglyMeasurable fun y ↦ hpt σ hσ.le y
 
 local notation "shiftedMellin" =>
   (fun (n : ℕ) (δ : ℝ) (s : ℂ) ↦ mellin (fromLog f) ((n : ℂ) + (δ : ℂ) * s))
