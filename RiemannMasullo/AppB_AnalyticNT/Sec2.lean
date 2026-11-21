@@ -1936,12 +1936,57 @@ include hδ
 /-- Paper: Corollary B.2.1.10(1), p. 600. The two shifts of the Mellin
 variable, with and without reflection, give entire functions. -/
 theorem differentiable_shiftedMellin_of_exponentialDecay :
-    Differentiable ℂ (shiftedMellin n δ) := by sorry
+    Differentiable ℂ (shiftedMellin n δ) := by
+  have h : Differentiable ℂ (fun s : ℂ ↦ (n : ℂ) + (δ : ℂ) * s) := by fun_prop
+  exact (differentiable_mellin_of_exponentialDecay f hf).comp h
 
 /-- Paper: Corollary B.2.1.10(1), p. 600. Both shifted transforms are
 bounded on each vertical strip of bounded width. -/
 theorem bddAbove_norm_shiftedMellin_of_exponentialDecay (a b : ℝ) (hab : a < b) :
-    BddAbove ((fun s : ℂ ↦ ‖shiftedMellin n δ s‖) '' closedStrip a b) := by sorry
+    BddAbove ((fun s : ℂ ↦ ‖shiftedMellin n δ s‖) '' closedStrip a b) := by
+  have hcont : Continuous (mellin (fromLog f)) :=
+    (differentiable_mellin_of_exponentialDecay f hf).continuous
+  obtain ⟨M, hM⟩ : ∃ M : ℝ, M = max |a| |b| := ⟨_, rfl⟩
+  have hM0 : 0 < M := by
+    rw [hM, lt_max_iff, abs_pos, abs_pos]
+    by_contra h
+    rw [not_or, not_not, not_not] at h
+    rw [h.1, h.2] at hab
+    exact lt_irrefl _ hab
+  -- Away from the real axis the height bound applies; near it the strip is compact.
+  obtain ⟨C, hC, hBound⟩ := mellin_heightBound_of_exponentialDecay f hf
+    ((n : ℝ) - M) ((n : ℝ) + M) (by linarith) 1 le_rfl
+  obtain ⟨D, hD⟩ := (isCompact_Icc.reProdIm isCompact_Icc).exists_bound_of_continuousOn
+    (s := Complex.reProdIm (Icc ((n : ℝ) - M) ((n : ℝ) + M)) (Icc (-1 : ℝ) 1))
+    hcont.continuousOn
+  refine ⟨max C D, ?_⟩
+  rintro _ ⟨s, hs, rfl⟩
+  change ‖mellin (fromLog f) ((n : ℂ) + (δ : ℂ) * s)‖ ≤ max C D
+  obtain ⟨w, hw⟩ : ∃ w : ℂ, w = (n : ℂ) + (δ : ℂ) * s := ⟨_, rfl⟩
+  rw [← hw]
+  have hsre : |s.re| ≤ M := by
+    rw [hM]
+    exact abs_le_max_abs_abs hs.1 hs.2
+  have hδs : |δ * s.re| ≤ M := by
+    rcases hδ with rfl | rfl <;> simpa using hsre
+  have hwre : w.re = (n : ℝ) + δ * s.re := by
+    rw [hw]
+    simp
+  have hre : w.re ∈ Icc ((n : ℝ) - M) ((n : ℝ) + M) := by
+    rw [hwre]
+    have h := abs_le.mp hδs
+    constructor <;> linarith
+  by_cases him : |w.im| ≤ 1
+  · exact (hD w (Complex.mem_reProdIm.mpr ⟨hre, abs_le.mp him⟩)).trans (le_max_right _ _)
+  · have him' : 1 < |w.im| := not_le.mp him
+    have hne : w.im ≠ 0 := by
+      intro h
+      rw [h, abs_zero] at him'
+      linarith
+    have h : ‖mellin (fromLog f) w‖ ≤ C / |w.im| ^ 1 := by
+      simpa only [Complex.re_add_im] using hBound w.re hre w.im hne
+    rw [pow_one] at h
+    exact (h.trans (div_le_self hC.le him'.le)).trans (le_max_left _ _)
 
 /-- Paper: Corollary B.2.1.10(1), p. 600. The inequality (B.2.1.28)
 applies to both shifts with the weighted, possibly reflected input.
@@ -1992,13 +2037,23 @@ def SchwartzOnLeftHalfPlane (Φ : ℂ → ℂ) (b : ℝ) : Prop :=
 Mellin transforms that are Schwartz on vertical strips. -/
 theorem schwartzOnVerticalStrips_mellin_of_exponentialDecay
     (f : 𝓢(ℝ, ℂ)) (hf : ExponentialDecay f) :
-    SchwartzOnVerticalStrips (mellin (fromLog f)) := by sorry
+    SchwartzOnVerticalStrips (mellin (fromLog f)) := by
+  refine ⟨differentiable_mellin_of_exponentialDecay f hf, fun a b hab ↦
+    ⟨hab, (differentiable_mellin_of_exponentialDecay f hf).differentiableOn,
+      fun ε _ hWidth N hN ↦ ?_⟩⟩
+  obtain ⟨C, hC, hBound⟩ :=
+    mellin_heightBound_of_exponentialDecay f hf (a + ε) (b - ε) hWidth N hN
+  have hy : ∀ᶠ y : ℝ in atAbsInfty, 0 < |y| := tendsto_comap.eventually (eventually_gt_atTop 0)
+  refine ⟨C, hC, ?_⟩
+  filter_upwards [hy] with y hy σ hσ
+  exact hBound σ hσ y (abs_pos.mp hy)
 
 /-- Paper: Example B.2.2.2, p. 600. Exponentially decaying functions give
 Mellin transforms that are uniformly Schwartz on each prescribed vertical strip. -/
 theorem uniformlySchwartzOnStrip_mellin_of_exponentialDecay
     (f : 𝓢(ℝ, ℂ)) (hf : ExponentialDecay f) (a b : ℝ) (hab : a < b) :
-    UniformlySchwartzOnStrip (mellin (fromLog f)) a b := by sorry
+    UniformlySchwartzOnStrip (mellin (fromLog f)) a b :=
+  (schwartzOnVerticalStrips_mellin_of_exponentialDecay f hf).2 a b hab
 
 /-- Paper: Definition B.2.2.1, p. 600. An exponentially decaying function
 supported in t > 1 gives a Mellin transform that is Schwartz on each left half-plane.
@@ -2006,7 +2061,15 @@ Deviation: Sanity check using Proposition B.2.1.9(4). -/
 theorem schwartzOnLeftHalfPlane_mellin_of_exponentialDecay
     (f : 𝓢(ℝ, ℂ)) (hf : ExponentialDecay f)
     (hSupport : tsupport (f : ℝ → ℂ) ⊆ Ioi 0) (b : ℝ) :
-    SchwartzOnLeftHalfPlane (mellin (fromLog f)) b := by sorry
+    SchwartzOnLeftHalfPlane (mellin (fromLog f)) b := by
+  refine ⟨(differentiable_mellin_of_exponentialDecay f hf).differentiableOn,
+    fun ε _ N hN ↦ ?_⟩
+  obtain ⟨C, hC, hBound⟩ :=
+    mellin_heightBound_left_of_exponentialDecay f hf hSupport (b - ε) N hN
+  have hy : ∀ᶠ y : ℝ in atAbsInfty, 0 < |y| := tendsto_comap.eventually (eventually_gt_atTop 0)
+  refine ⟨C, hC, ?_⟩
+  filter_upwards [hy] with y hy σ hσ
+  exact hBound σ hσ y (abs_pos.mp hy)
 
 /-- The Mellin integral of a logarithmic profile after the substitution `t = exp x`. -/
 private theorem mellin_logProfile_eq (g : ℝ → ℂ) (s : ℂ) :
