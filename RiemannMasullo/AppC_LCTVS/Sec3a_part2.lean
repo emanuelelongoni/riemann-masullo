@@ -12,6 +12,7 @@ import Mathlib.Analysis.Normed.Group.Tannery
 import Mathlib.Analysis.SpecialFunctions.ContinuousFunctionalCalculus.Abs
 import Mathlib.Analysis.SpecialFunctions.ContinuousFunctionalCalculus.Rpow.Order
 import Mathlib.LinearAlgebra.Dimension.LinearMap
+import Mathlib.Topology.MetricSpace.UniformConvergence
 import RiemannMasullo.ForMathlib.Analysis.Normed.Operator.Compact.NormAttainment
 
 /-!
@@ -1631,11 +1632,126 @@ the Schatten class of index one. -/
 abbrev traceClassOperators : Submodule ℂ (E →L[ℂ] F) :=
   schattenClass E F 1 le_rfl
 
+/-- Paper: Lemma C.3.1.2, p. 694. A nuclear Hilbert endomorphism is compact. -/
+private theorem isCompactOperator_of_isNuclearOperator {T : E →L[ℂ] E}
+    (hT : IsNuclearOperator T) : IsCompactOperator T := by
+  obtain ⟨z, rfl⟩ := (isBanachNuclear_iff_mem_range T).mp
+    ((isNuclearOperator_iff_isBanachNuclear T).mp hT)
+  let A := completedProjectiveTensorToOperators (E := E) (F := E)
+  change IsCompactOperator (A z)
+  refine Completion.induction_on z
+    (isClosed_setOfPred_isCompactOperator.preimage A.continuous) fun w ↦ ?_
+  rw [completedProjectiveTensorToOperators_coe]
+  let S := tensorToFiniteRank w
+  have : FiniteDimensional ℂ S.toLinearMap.range := finiteDimensional_range_tensorToFiniteRank w
+  have : ProperSpace S.toLinearMap.range := FiniteDimensional.proper_rclike ℂ _
+  exact (isCompactOperator_of_locallyCompactSpace_dom
+    (S.codRestrict _ (LinearMap.mem_range_self S.toLinearMap))).continuous_comp
+    continuous_subtype_val
+
+open InnerProductSpace in
+/-- A singular expansion with summable coefficients gives a nuclear presentation. -/
+private theorem SingularExpansion.isNuclearOperator_of_summable_coeff {T : E →L[ℂ] E}
+    (d : SingularExpansion T) (hc : Summable (fun n ↦ (d.coeff n : ℝ))) :
+    IsNuclearOperator T := by
+  classical
+  let e (n : ℕ) : E := if hn : d.coeff n ≠ 0 then d.source ⟨n, hn⟩ else 0
+  let f (n : ℕ) : E := if hn : d.coeff n ≠ 0 then d.target ⟨n, hn⟩ else 0
+  let B := Metric.closedBall (0 : E) 1
+  have hf (n : ℕ) : f n ∈ B := by
+    by_cases hn : d.coeff n ≠ 0
+    · simp [B, f, hn, d.orthonormal_target.norm_eq_one]
+    · simp [B, f, not_ne_iff.mp hn]
+  apply (isNuclearOperator_iff_nonempty_presentation T).mpr
+  refine ⟨{
+    coeff := fun n ↦ (d.coeff n : ℝ)
+    functional := fun n ↦ innerSL ℂ (e n)
+    disc := B
+    isBanachDisc := isBanachDisc_closedUnitBall
+    vector := fun n ↦ ⟨f n, Submodule.subset_span (hf n)⟩
+    vector_mem := hf
+    summable_coeff := by simpa [Complex.norm_real, abs_of_nonneg (NNReal.coe_nonneg _)] using hc
+    equicontinuous := ?_
+    hasSum := ?_ }⟩
+  · refine (LipschitzWith.uniformEquicontinuous _ 1 fun n ↦ ?_).equicontinuous 0
+    apply (innerSL ℂ (e n)).lipschitzWith.weaken
+    rw [← NNReal.coe_le_coe, coe_nnNorm, NNReal.coe_one, innerSL_apply_norm]
+    by_cases hn : d.coeff n ≠ 0
+    · simp [e, hn, d.orthonormal_source.norm_eq_one]
+    · simp [e, not_ne_iff.mp hn]
+  · intro x
+    refine (hasSum_subtype_iff_of_support_subset (s := {n | d.coeff n ≠ 0}) ?_).mp ?_
+    · intro n hn
+      by_contra h
+      exact hn (by simp [show d.coeff n = 0 by simpa using h])
+    · refine (d.hasSum_apply x).congr_fun fun i ↦ ?_
+      simp [e, f, i.property]
+
+open InnerProductSpace in
+/-- In the singular vector coordinates, the absolute diagonal of a nuclear operator
+is its family of nonzero singular coefficients. -/
+private theorem SingularExpansion.summable_coeff_of_isNuclearOperator {T : E →L[ℂ] E}
+    (d : SingularExpansion T) (hT : IsNuclearOperator T) :
+    Summable (fun n ↦ (d.coeff n : ℝ)) := by
+  classical
+  let I := {n // d.coeff n ≠ 0}
+  let K := lp (fun _ : I ↦ ℂ) 2
+  let b : HilbertBasis I ℂ K := HilbertBasis.ofRepr (LinearIsometryEquiv.refl ℂ K)
+  let U : K →L[ℂ] E := d.orthonormal_source.orthogonalFamily.linearIsometry.toContinuousLinearMap
+  let V : K →L[ℂ] E := d.orthonormal_target.orthogonalFamily.linearIsometry.toContinuousLinearMap
+  let D := V.adjoint.comp (T.comp U)
+  have hD : IsNuclearOperator D := by
+    obtain ⟨c, φ, y, hc, hφ, hy, hsum⟩ := (isNuclearOperator_iff_isBanachNuclear T).mp hT
+    let P := (ContinuousLinearMap.compL ℂ K E ℂ).flip U
+    exact (isNuclearOperator_iff_isBanachNuclear D).mpr
+      ⟨c, P ∘ φ, V.adjoint ∘ y, hc, (P.continuous.tendsto' 0 0 (map_zero P)).comp hφ,
+        (V.adjoint.continuous.tendsto' 0 0 (map_zero V.adjoint)).comp hy, fun x ↦ by
+          simpa only [Function.comp_apply, map_smul, P, D, ContinuousLinearMap.flip_apply,
+            ContinuousLinearMap.compL_apply, ContinuousLinearMap.comp_apply] using
+            V.adjoint.hasSum (hsum (U x))⟩
+  have hb (i : I) : b i = lp.single 2 i 1 := b.repr_self i
+  have hU (i : I) : U (b i) = d.source i := by
+    rw [hb]
+    exact (d.orthonormal_source.orthogonalFamily.linearIsometry_apply_single (i := i) 1).trans
+      (one_smul ℂ _)
+  have hV (i : I) : V (b i) = d.target i := by
+    rw [hb]
+    exact (d.orthonormal_target.orthogonalFamily.linearIsometry_apply_single (i := i) 1).trans
+      (one_smul ℂ _)
+  have hdiag (i : I) : ‖⟪b i, D (b i)⟫_ℂ‖ = (d.coeff i : ℝ) := by
+    change ‖⟪b i, V.adjoint (T (U (b i)))⟫_ℂ‖ = _
+    rw [V.adjoint_inner_right, hU, hV]
+    have hsingular : T (d.source i) = ((d.coeff i : ℝ) : ℂ) • d.target i := by
+      apply (d.hasSum_apply (d.source i)).unique
+      convert hasSum_single i (fun j hj ↦ ?_) using 1
+      · simp [d.orthonormal_source.norm_eq_one i]
+      · simp [d.orthonormal_source.inner_eq_zero hj]
+    have hunit : ⟪d.target i, d.target i⟫_ℂ = 1 := by
+      simp [inner_self_eq_norm_sq_to_K, d.orthonormal_target.norm_eq_one i]
+    rw [hsingular, inner_smul_right, hunit, mul_one, Complex.norm_real,
+      Real.norm_of_nonneg (NNReal.coe_nonneg _)]
+  obtain ⟨r, hr⟩ := (summable_norm_hilbertDiagonal b D hD).congr hdiag
+  have hsupp : Function.support (fun n ↦ (d.coeff n : ℝ)) ⊆ {n | d.coeff n ≠ 0} := by
+    intro n hn hz
+    exact hn (by simp [hz])
+  exact ⟨r, (hasSum_subtype_iff_of_support_subset hsupp).mp hr⟩
+
 /-- Paper: Definition C.3.6.2(3), p. 704. For Hilbert endomorphisms, the
 index-one Schatten condition is equivalent to nuclearity.
 Deviation: This checks that trace class agrees with §C.3.4 on endomorphisms. -/
 theorem mem_traceClassOperators_iff_isNuclearOperator (T : E →L[ℂ] E) :
-    T ∈ traceClassOperators E E ↔ IsNuclearOperator T := by sorry
+    T ∈ traceClassOperators E E ↔ IsNuclearOperator T := by
+  change (IsCompactOperator T ∧ Summable (fun n ↦ approximationNumber T n ^ (1 : ℝ))) ↔ _
+  simp only [Real.rpow_one]
+  constructor
+  · rintro ⟨hT, hs⟩
+    obtain ⟨d⟩ := (isCompactOperator_iff_nonempty_singularExpansion T).mp hT
+    exact d.isNuclearOperator_of_summable_coeff (hs.congr fun n ↦
+      (d.coeff_eq_approximationNumber n).symm)
+  · intro hT
+    have hc := isCompactOperator_of_isNuclearOperator hT
+    obtain ⟨d⟩ := (isCompactOperator_iff_nonempty_singularExpansion T).mp hc
+    exact ⟨hc, (d.summable_coeff_of_isNuclearOperator hT).congr d.coeff_eq_approximationNumber⟩
 
 variable {G : Type*} [NormedAddCommGroup G] [InnerProductSpace ℂ G] [CompleteSpace G]
 
