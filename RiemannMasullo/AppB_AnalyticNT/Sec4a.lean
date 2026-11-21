@@ -5,6 +5,7 @@ public import Mathlib.Analysis.Distribution.TemperedDistribution
 public import Mathlib.Topology.Algebra.InfiniteSum.UniformOn
 public import RiemannMasullo.AppB_AnalyticNT.Sec2
 public import RiemannMasullo.Ch03_IdelicZeta.Sec2
+import Mathlib.Analysis.MellinInversion
 import Mathlib.Analysis.Normed.Group.FunctionSeries
 import Mathlib.Analysis.SpecialFunctions.ImproperIntegrals
 import Mathlib.Analysis.SpecialFunctions.Trigonometric.Bounds
@@ -1027,16 +1028,228 @@ theorem hasSum_localEulerFactor_mellinSamples (ℓ : ℂ)
 local notation "eulerIntegrand" =>
   (fun (s : ℂ) ↦ logMellin f s * logDeriv (finiteHeckeEulerFactor χ v) s)
 
+omit hχ hf in
+/-- In the right half-plane a unimodular multiple of `q ^ (-s)` stays away from one. -/
+private lemma one_sub_le_norm_one_sub_mul_cpow {c : ℂ} {q : ℕ} (hq : 1 < q) (hc : ‖c‖ = 1)
+    (s : ℂ) : 1 - (q : ℝ) ^ (-s.re) ≤ ‖1 - c * (q : ℂ) ^ (-s)‖ := by
+  have h := norm_sub_norm_le (1 : ℂ) (c * (q : ℂ) ^ (-s))
+  rwa [norm_one, norm_mul, hc, one_mul,
+    Complex.norm_natCast_cpow_of_pos (zero_lt_one.trans hq), Complex.neg_re] at h
+
+omit hχ hf in
+/-- The logarithmic derivative of the Euler factor `(1 - c q ^ (-s))⁻¹` on the
+right half-plane. -/
+private lemma logDeriv_inv_one_sub_mul_cpow {c : ℂ} {q : ℕ} (hq : 1 < q) (hc : ‖c‖ = 1)
+    {s : ℂ} (hs : 0 < s.re) :
+    logDeriv (fun z : ℂ ↦ (1 - c * (q : ℂ) ^ (-z))⁻¹) s =
+      -(c * ((q : ℂ) ^ (-s) * Complex.log q)) / (1 - c * (q : ℂ) ^ (-s)) := by
+  have hq0 : (q : ℂ) ≠ 0 := Nat.cast_ne_zero.mpr (zero_lt_one.trans hq).ne'
+  have hr : (q : ℝ) ^ (-s.re) < 1 :=
+    Real.rpow_lt_one_of_one_lt_of_neg (by exact_mod_cast hq) (neg_neg_of_pos hs)
+  have hne : 1 - c * (q : ℂ) ^ (-s) ≠ 0 := by
+    intro h
+    have hle := one_sub_le_norm_one_sub_mul_cpow hq hc s
+    rw [h, norm_zero] at hle
+    linarith
+  have hpow : HasDerivAt (fun z : ℂ ↦ (q : ℂ) ^ (-z))
+      ((q : ℂ) ^ (-s) * Complex.log q * (-1)) s :=
+    (hasDerivAt_neg' s).const_cpow (Or.inl hq0)
+  have hd : HasDerivAt (fun z : ℂ ↦ 1 - c * (q : ℂ) ^ (-z))
+      (c * ((q : ℂ) ^ (-s) * Complex.log q)) s := by
+    convert (hpow.const_mul c).const_sub 1 using 1
+    ring
+  have hinv : HasDerivAt (fun z : ℂ ↦ (1 - c * (q : ℂ) ^ (-z))⁻¹)
+      (-(c * ((q : ℂ) ^ (-s) * Complex.log q)) / (1 - c * (q : ℂ) ^ (-s)) ^ 2) s := hd.inv hne
+  rw [logDeriv_apply, hinv.deriv, div_inv_eq_mul, sq, div_mul_eq_mul_div,
+    mul_div_mul_right _ _ hne]
+
+open MeasureTheory in
+omit hχ in
+/-- The Mellin transform of an exponentially decaying profile is integrable on
+every vertical line. -/
+private lemma verticalIntegrable_logMellin (a : ℝ) :
+    Complex.VerticalIntegrable (logMellin f) a := by
+  have hΦ : Continuous (logMellin f) := (differentiable_mellin_of_exponentialDecay f hf).continuous
+  have hline : Continuous (fun y : ℝ ↦ (a : ℂ) + (y : ℂ) * Complex.I) := by fun_prop
+  obtain ⟨C, hC, hBound⟩ :=
+    mellin_heightBound_of_exponentialDecay f hf a (a + 1) (by linarith) 2 one_le_two
+  obtain ⟨D, hD⟩ := isCompact_Icc.exists_bound_of_continuousOn (s := Icc (-1 : ℝ) 1)
+    (hΦ.comp hline).continuousOn
+  have hD0 : 0 ≤ D := (norm_nonneg _).trans (hD 0 ⟨by norm_num, by norm_num⟩)
+  refine (integrable_inv_one_add_sq.const_mul (2 * C + 2 * D)).mono'
+    (hΦ.comp hline).aestronglyMeasurable (Eventually.of_forall fun y ↦ ?_)
+  have hy2 : (0 : ℝ) < 1 + y ^ 2 := by positivity
+  obtain ⟨N, hN⟩ : ∃ N : ℝ, N = ‖logMellin f ((a : ℂ) + (y : ℂ) * Complex.I)‖ := ⟨_, rfl⟩
+  have hN0 : 0 ≤ N := by
+    rw [hN]
+    exact norm_nonneg _
+  change ‖logMellin f ((a : ℂ) + (y : ℂ) * Complex.I)‖ ≤ (2 * C + 2 * D) * (1 + y ^ 2)⁻¹
+  rw [← hN, ← div_eq_mul_inv, le_div_iff₀ hy2]
+  by_cases hy : |y| ≤ 1
+  · have h1 : y ^ 2 ≤ 1 := by
+      rw [← sq_abs]
+      exact pow_le_one₀ (abs_nonneg y) hy
+    have h2 : N ≤ D := by
+      rw [hN]
+      exact hD y (abs_le.mp hy)
+    nlinarith [mul_nonneg hN0 (sub_nonneg.mpr h1)]
+  · have hy1 : 1 < |y| := not_le.mp hy
+    have hy0 : y ≠ 0 := by
+      intro h
+      rw [h, abs_zero] at hy1
+      linarith
+    have h1 : 1 ≤ y ^ 2 := by
+      rw [← sq_abs]
+      exact one_le_pow₀ hy1.le
+    have hysq : (0 : ℝ) < y ^ 2 := by positivity
+    have h2 : N * y ^ 2 ≤ C := by
+      have h := hBound a (left_mem_Icc.mpr (by linarith)) y hy0
+      rw [sq_abs] at h
+      rw [hN]
+      exact (le_div_iff₀ hysq).mp h
+    nlinarith [mul_nonneg hN0 (sub_nonneg.mpr h1)]
+
+open MeasureTheory in
 /-- Paper: Lemma B.4.1.7, p. 611. The Mellin transform times the logarithmic
 derivative of the unramified Euler factor is integrable on the right vertical line. -/
 theorem verticalIntegrable_localEulerFactor_mellin (a : ℝ) (ha : 0 < a) :
-    Complex.VerticalIntegrable eulerIntegrand a := by sorry
+    Complex.VerticalIntegrable eulerIntegrand a := by
+  obtain ⟨c, hcdef⟩ : ∃ c : ℂ, c = χ₀(χ).localValue v := ⟨_, rfl⟩
+  obtain ⟨q, hqdef⟩ : ∃ q : ℕ, q = Ideal.absNorm v.asIdeal := ⟨_, rfl⟩
+  have hc : ‖c‖ = 1 := by
+    rw [hcdef]
+    exact norm_ideleClassNormTwist_zero_localValue χ v
+  have hq : 1 < q := by
+    rw [hqdef]
+    exact NumberField.HeightOneSpectrum.one_lt_absNorm v
+  have hq0 : (q : ℂ) ≠ 0 := Nat.cast_ne_zero.mpr (zero_lt_one.trans hq).ne'
+  have hqR : (1 : ℝ) < q := by exact_mod_cast hq
+  have hEuler : finiteHeckeEulerFactor χ v = fun z : ℂ ↦ (1 - c * (q : ℂ) ^ (-z))⁻¹ := by
+    funext z
+    rw [finiteHeckeEulerFactor, ite_eq_left hχ, hcdef, hqdef]
+  obtain ⟨r, hrdef⟩ : ∃ r : ℝ, r = (q : ℝ) ^ (-a) := ⟨_, rfl⟩
+  have hr0 : 0 ≤ r := by
+    rw [hrdef]
+    exact Real.rpow_nonneg (zero_le_one.trans hqR.le) _
+  have hr1 : r < 1 := by
+    rw [hrdef]
+    exact Real.rpow_lt_one_of_one_lt_of_neg hqR (neg_neg_of_pos ha)
+  have hre (y : ℝ) : ((a : ℂ) + (y : ℂ) * Complex.I).re = a := by simp
+  have hs (y : ℝ) : 0 < ((a : ℂ) + (y : ℂ) * Complex.I).re := by
+    rw [hre]
+    exact ha
+  have hline : Continuous (fun y : ℝ ↦ (a : ℂ) + (y : ℂ) * Complex.I) := by fun_prop
+  have hΦint : Integrable (fun y : ℝ ↦ logMellin f ((a : ℂ) + (y : ℂ) * Complex.I)) :=
+    verticalIntegrable_logMellin f hf a
+  -- The logarithmic derivative of the Euler factor is continuous and bounded on the line.
+  have hden (y : ℝ) : 1 - r ≤ ‖1 - c * (q : ℂ) ^ (-((a : ℂ) + (y : ℂ) * Complex.I))‖ := by
+    have h := one_sub_le_norm_one_sub_mul_cpow hq hc ((a : ℂ) + (y : ℂ) * Complex.I)
+    rwa [hre, ← hrdef] at h
+  have hden0 (y : ℝ) : 1 - c * (q : ℂ) ^ (-((a : ℂ) + (y : ℂ) * Complex.I)) ≠ 0 := by
+    intro h
+    have hle := hden y
+    rw [h, norm_zero] at hle
+    linarith
+  have hpow : Continuous (fun y : ℝ ↦ (q : ℂ) ^ (-((a : ℂ) + (y : ℂ) * Complex.I))) :=
+    hline.neg.const_cpow (Or.inl hq0)
+  have hLcont : Continuous (fun y : ℝ ↦
+      -(c * ((q : ℂ) ^ (-((a : ℂ) + (y : ℂ) * Complex.I)) * Complex.log q)) /
+        (1 - c * (q : ℂ) ^ (-((a : ℂ) + (y : ℂ) * Complex.I)))) :=
+    ((continuous_const.mul (hpow.mul continuous_const)).neg).div
+      (continuous_const.sub (continuous_const.mul hpow)) hden0
+  have hLbound (y : ℝ) :
+      ‖-(c * ((q : ℂ) ^ (-((a : ℂ) + (y : ℂ) * Complex.I)) * Complex.log q)) /
+        (1 - c * (q : ℂ) ^ (-((a : ℂ) + (y : ℂ) * Complex.I)))‖ ≤
+        r * ‖Complex.log q‖ / (1 - r) := by
+    rw [norm_div, norm_neg, norm_mul, norm_mul, hc, one_mul,
+      Complex.norm_natCast_cpow_of_pos (zero_lt_one.trans hq), Complex.neg_re, hre, ← hrdef]
+    exact div_le_div_of_nonneg_left (mul_nonneg hr0 (norm_nonneg _)) (sub_pos.mpr hr1) (hden y)
+  refine (hΦint.mul_bdd hLcont.aestronglyMeasurable (Eventually.of_forall hLbound)).congr
+    (Eventually.of_forall fun y ↦ ?_)
+  change _ = logMellin f _ * logDeriv (finiteHeckeEulerFactor χ v) _
+  rw [hEuler, logDeriv_inv_one_sub_mul_cpow hq hc (hs y)]
+
+omit hχ hf in
+/-- Powers of `q ^ (-s)` are the values at `-s` of the powers of `q`. -/
+private lemma natCast_cpow_neg_pow (q : ℕ) (s : ℂ) (n : ℕ) :
+    ((q : ℂ) ^ (-s)) ^ n = (((q : ℝ) ^ n : ℝ) : ℂ) ^ (-s) := by
+  rw [← Complex.cpow_nat_mul, Complex.natCast_cpow_natCast_mul, Complex.ofReal_pow,
+    Complex.ofReal_natCast]
+
+open MeasureTheory in
+omit hχ hf in
+/-- Termwise integration of the geometric expansion of the logarithmic derivative
+of an Euler factor against an integrable function. -/
+private lemma hasSum_integral_mul_geometric {Ψ w : ℝ → ℂ} {c L : ℂ} {r : ℝ}
+    (hΨ : Integrable Ψ) (hw : Continuous w) (hc : ‖c‖ = 1) (hr : r < 1)
+    (hwr : ∀ y, ‖w y‖ = r) :
+    HasSum (fun m : ℕ ↦ ∫ y : ℝ, -L * (c ^ (m + 1) * (Ψ y * w y ^ (m + 1))))
+      (∫ y : ℝ, Ψ y * (-(c * (w y * L)) / (1 - c * w y))) := by
+  have hr0 : 0 ≤ r := by
+    rw [← hwr 0]
+    exact norm_nonneg _
+  have hint (m : ℕ) :
+      Integrable (fun y : ℝ ↦ -L * (c ^ (m + 1) * (Ψ y * w y ^ (m + 1)))) := by
+    have hbdd : ∀ y : ℝ, ‖w y ^ (m + 1)‖ ≤ r ^ (m + 1) := fun y ↦ by
+      rw [norm_pow, hwr]
+    exact ((hΨ.mul_bdd (hw.pow _).aestronglyMeasurable
+      (Eventually.of_forall hbdd)).const_mul _).const_mul _
+  have hnorm (m : ℕ) : (∫ y : ℝ, ‖-L * (c ^ (m + 1) * (Ψ y * w y ^ (m + 1)))‖) =
+      ‖L‖ * (∫ y : ℝ, ‖Ψ y‖) * r ^ (m + 1) := by
+    have hfun : (fun y : ℝ ↦ ‖-L * (c ^ (m + 1) * (Ψ y * w y ^ (m + 1)))‖) =
+        fun y : ℝ ↦ ‖L‖ * r ^ (m + 1) * ‖Ψ y‖ := by
+      funext y
+      rw [norm_mul, norm_neg, norm_mul, norm_pow, hc, one_pow, one_mul, norm_mul, norm_pow,
+        hwr]
+      ring
+    rw [hfun, integral_const_mul]
+    ring
+  have hsum : Summable
+      (fun m : ℕ ↦ ∫ y : ℝ, ‖-L * (c ^ (m + 1) * (Ψ y * w y ^ (m + 1)))‖) := by
+    rw [funext hnorm]
+    exact ((summable_nat_add_iff 1).2 (summable_geometric_of_lt_one hr0 hr)).mul_left _
+  have hpt (y : ℝ) : ∑' m : ℕ, -L * (c ^ (m + 1) * (Ψ y * w y ^ (m + 1))) =
+      Ψ y * (-(c * (w y * L)) / (1 - c * w y)) := by
+    have hξ : ‖c * w y‖ < 1 := by
+      rw [norm_mul, hc, one_mul, hwr]
+      exact hr
+    have hgeo := (hasSum_geometric_of_norm_lt_one hξ).mul_left (-L * Ψ y * (c * w y))
+    have hfun : (fun m : ℕ ↦ -L * (c ^ (m + 1) * (Ψ y * w y ^ (m + 1)))) =
+        fun m : ℕ ↦ -L * Ψ y * (c * w y) * (c * w y) ^ m := by
+      funext m
+      ring
+    rw [hfun, hgeo.tsum_eq, div_eq_mul_inv]
+    ring
+  have h := hasSum_integral_of_summable_integral_norm hint hsum
+  rwa [funext hpt] at h
+
+open MeasureTheory in
+omit hχ hf in
+/-- A value of the inverse Mellin transform read as an integral over the vertical line. -/
+private lemma integral_mul_cpow_of_mellinInv_eq {Φ : ℂ → ℂ} {a x : ℝ} {b : ℂ}
+    (h : mellinInv a Φ x = b) :
+    ∫ y : ℝ, Φ ((a : ℂ) + (y : ℂ) * Complex.I) *
+      (x : ℂ) ^ (-((a : ℂ) + (y : ℂ) * Complex.I)) = 2 * (Real.pi : ℂ) * b := by
+  have hcomm : (fun y : ℝ ↦ Φ ((a : ℂ) + (y : ℂ) * Complex.I) *
+      (x : ℂ) ^ (-((a : ℂ) + (y : ℂ) * Complex.I))) =
+      fun y : ℝ ↦ (x : ℂ) ^ (-((a : ℂ) + (y : ℂ) * Complex.I)) •
+        Φ ((a : ℂ) + (y : ℂ) * Complex.I) := by
+    funext y
+    rw [smul_eq_mul, mul_comm]
+  have hpi : 2 * (Real.pi : ℂ) * ((1 / (2 * Real.pi) : ℝ) : ℂ) = 1 := by
+    push_cast
+    exact mul_one_div_cancel
+      (mul_ne_zero two_ne_zero (Complex.ofReal_ne_zero.mpr Real.pi_ne_zero))
+  rw [hcomm, ← h]
+  unfold mellinInv
+  rw [Complex.real_smul, ← mul_assoc, hpi, one_mul]
 
 -- TODO(paper-gap): The second equality in (B.4.1.20) and (B.4.1.35) omit
 -- the left vertical integral needed for the full residue sum. The right
 -- vertical line alone gives only the strictly positive powers of the prime norm.
 -- On p. 614 the dropped integral of Φ is 2πi times the test function at one.
 
+open MeasureTheory in
 /-- Paper: Lemma B.4.1.7, p. 611. The negative normalized right-line
 integral is the logarithm of the norm times the local Dirac sum at weight zero.
 Deviation: The single right-line integral in (B.4.1.20) gives only strictly
@@ -1044,7 +1257,72 @@ positive powers, as follows from the Euler expansion (B.4.2.7) and Mellin invers
 theorem hasSum_localEulerFactor_cauchyIntegral (a : ℝ) (ha : 0 < a) :
     HasSum (fun m : ℕ ↦ (Real.log q(v) : ℂ) * (χ₀(χ).localValue v) ^ (m + 1) *
       f ((m + 1 : ℕ) * Real.log q(v))) (-verticalLineIntegral eulerIntegrand a / twoPiI) :=
-  by sorry
+  by
+  obtain ⟨c, hcdef⟩ : ∃ c : ℂ, c = χ₀(χ).localValue v := ⟨_, rfl⟩
+  obtain ⟨q, hqdef⟩ : ∃ q : ℕ, q = Ideal.absNorm v.asIdeal := ⟨_, rfl⟩
+  rw [← hcdef, ← hqdef]
+  have hc : ‖c‖ = 1 := by
+    rw [hcdef]
+    exact norm_ideleClassNormTwist_zero_localValue χ v
+  have hq : 1 < q := by
+    rw [hqdef]
+    exact NumberField.HeightOneSpectrum.one_lt_absNorm v
+  have hq0 : (q : ℂ) ≠ 0 := Nat.cast_ne_zero.mpr (zero_lt_one.trans hq).ne'
+  have hqR : (1 : ℝ) < q := by exact_mod_cast hq
+  have hEuler : finiteHeckeEulerFactor χ v = fun z : ℂ ↦ (1 - c * (q : ℂ) ^ (-z))⁻¹ := by
+    funext z
+    rw [finiteHeckeEulerFactor, ite_eq_left hχ, hcdef, hqdef]
+  obtain ⟨r, hrdef⟩ : ∃ r : ℝ, r = (q : ℝ) ^ (-a) := ⟨_, rfl⟩
+  have hr1 : r < 1 := by
+    rw [hrdef]
+    exact Real.rpow_lt_one_of_one_lt_of_neg hqR (neg_neg_of_pos ha)
+  have hre (y : ℝ) : ((a : ℂ) + (y : ℂ) * Complex.I).re = a := by simp
+  have hs (y : ℝ) : 0 < ((a : ℂ) + (y : ℂ) * Complex.I).re := by
+    rw [hre]
+    exact ha
+  have hline : Continuous (fun y : ℝ ↦ (a : ℂ) + (y : ℂ) * Complex.I) := by fun_prop
+  have hΦint : Integrable (fun y : ℝ ↦ logMellin f ((a : ℂ) + (y : ℂ) * Complex.I)) :=
+    verticalIntegrable_logMellin f hf a
+  have hw : Continuous (fun y : ℝ ↦ (q : ℂ) ^ (-((a : ℂ) + (y : ℂ) * Complex.I))) :=
+    hline.neg.const_cpow (Or.inl hq0)
+  have hwr (y : ℝ) : ‖(q : ℂ) ^ (-((a : ℂ) + (y : ℂ) * Complex.I))‖ = r := by
+    rw [Complex.norm_natCast_cpow_of_pos (zero_lt_one.trans hq), Complex.neg_re, hre, ← hrdef]
+  -- Expand the logarithmic derivative geometrically and integrate term by term.
+  have hS := hasSum_integral_mul_geometric (L := Complex.log q) hΦint hw hc hr1 hwr
+  have hlim : (∫ y : ℝ, logMellin f ((a : ℂ) + (y : ℂ) * Complex.I) *
+      (-(c * ((q : ℂ) ^ (-((a : ℂ) + (y : ℂ) * Complex.I)) * Complex.log q)) /
+        (1 - c * (q : ℂ) ^ (-((a : ℂ) + (y : ℂ) * Complex.I))))) =
+      ∫ y : ℝ, eulerIntegrand ((a : ℂ) + (y : ℂ) * Complex.I) := by
+    refine integral_congr_ae (Eventually.of_forall fun y ↦ ?_)
+    change _ = logMellin f _ * logDeriv (finiteHeckeEulerFactor χ v) _
+    rw [hEuler, logDeriv_inv_one_sub_mul_cpow hq hc (hs y)]
+  -- Mellin inversion evaluates each term at a power of the prime norm.
+  have hterm (m : ℕ) : (∫ y : ℝ, -Complex.log q * (c ^ (m + 1) *
+      (logMellin f ((a : ℂ) + (y : ℂ) * Complex.I) *
+        ((q : ℂ) ^ (-((a : ℂ) + (y : ℂ) * Complex.I))) ^ (m + 1)))) =
+      -(2 * (Real.pi : ℂ)) *
+        ((Real.log q : ℂ) * c ^ (m + 1) * f ((m + 1 : ℕ) * Real.log q)) := by
+    have hx : (0 : ℝ) < (q : ℝ) ^ (m + 1) := pow_pos (zero_lt_one.trans hqR) _
+    have hinv : mellinInv a (logMellin f) ((q : ℝ) ^ (m + 1)) =
+        f (Real.log ((q : ℝ) ^ (m + 1))) :=
+      mellinInv_mellin_eq a (fun t : ℝ ↦ f (Real.log t)) hx
+        (mellinConvergent_of_exponentialDecay f hf a) hΦint
+        (f.continuous.continuousAt.comp (Real.continuousAt_log hx.ne'))
+    have hM := integral_mul_cpow_of_mellinInv_eq hinv
+    simp_rw [natCast_cpow_neg_pow]
+    rw [integral_const_mul, integral_const_mul, hM, Real.log_pow, Complex.natCast_log]
+    ring
+  rw [hlim, funext hterm] at hS
+  have hpi : (2 * (Real.pi : ℂ)) ≠ 0 :=
+    mul_ne_zero two_ne_zero (Complex.ofReal_ne_zero.mpr Real.pi_ne_zero)
+  convert hS.mul_left (-(2 * (Real.pi : ℂ))⁻¹) using 1
+  · funext m
+    rw [← mul_assoc, neg_mul_neg, inv_mul_cancel₀ hpi, one_mul]
+  · obtain ⟨J, hJ⟩ : ∃ J : ℂ, J = ∫ y : ℝ, eulerIntegrand ((a : ℂ) + (y : ℂ) * Complex.I) :=
+      ⟨_, rfl⟩
+    change -(Complex.I * ∫ y : ℝ, eulerIntegrand ((a : ℂ) + (y : ℂ) * Complex.I)) / twoPiI = _
+    rw [← hJ, neg_div, mul_comm Complex.I J, mul_div_mul_right _ _ Complex.I_ne_zero, neg_mul,
+      inv_mul_eq_div]
 
 end LocalFactor
 
