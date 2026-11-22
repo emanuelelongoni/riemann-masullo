@@ -35,7 +35,12 @@ local instance instIdeleMeasurableSpaceSec1a : MeasurableSpace 𝕀[F] := borel 
 Schwartz–Bruhat functions restricted to the ideles is Borel measurable. -/
 theorem measurable_ideleLimit (φ : ℕ → ℬ[F]) (f : 𝕀[F] → ℂ)
     (h : ∀ g : 𝕀[F], Tendsto (fun k ↦ ideleValue (φ k) g) atTop (𝓝 (f g))) :
-    Measurable f := by sorry
+    Measurable f := by
+  have hborel : BorelSpace 𝕀[F] := ⟨rfl⟩
+  have hk : ∀ k, Measurable (fun g : 𝕀[F] ↦ ideleValue (φ k) g) := fun k ↦
+    ((schwartzBruhat_continuous (φ k)).comp
+      (continuous_ofAdd.comp Units.continuous_val)).measurable
+  exact measurable_of_tendsto_metrizable hk (tendsto_pi_nhds.mpr h)
 
 /-- Paper: Proposition 11.1.1.2, p. 476. The majorant series sums over the
 nonzero elements of the given fractional ideal. -/
@@ -47,7 +52,10 @@ nonzero element of the ideal can be nonzero, the series equals that term. -/
 theorem fractionalIdealOrbitSum_eq_single (I : Frac[F]) (α : 𝕀[F] → ℝ≥0) (g : 𝕀[F])
     (ξ₀ : Fˣ) (hξ₀ : (ξ₀ : F) ∈ I)
     (h : ∀ ξ : Fˣ, (ξ : F) ∈ I → ξ ≠ ξ₀ → α (principal ξ * g) = 0) :
-    fractionalIdealOrbitSum I α g = (α (principal ξ₀ * g) : ℝ) := by sorry
+    fractionalIdealOrbitSum I α g = (α (principal ξ₀ * g) : ℝ) := by
+  unfold fractionalIdealOrbitSum
+  refine tsum_eq_single (⟨ξ₀, hξ₀⟩ : {ξ : Fˣ // (ξ.val : F) ∈ I}) fun ξ hξ ↦ ?_
+  rw [h ξ.val ξ.property fun he ↦ hξ (Subtype.ext he), NNReal.coe_zero]
 
 /-- Paper: Equation (11.1.1.3), p. 476. The theta series of an idele function
 sums its values at all nonzero principal multiples of the idele. -/
@@ -57,7 +65,8 @@ def ideleThetaSum (f : 𝕀[F] → ℂ) (g : 𝕀[F]) : ℂ :=
 /-- Paper: Equation (11.1.1.3), p. 476. On Schwartz–Bruhat inputs the
 idele series equals the global adelic theta function evaluated on the idele class. -/
 theorem ideleThetaSum_schwartzBruhat (φ : ℬ[F]) (g : 𝕀[F]) :
-    ideleThetaSum (ideleValue φ) g = adelicTheta φ (classOf g) := by sorry
+    ideleThetaSum (ideleValue φ) g = adelicTheta φ (classOf g) :=
+  (adelicTheta_mk φ g).symm
 
 /-- Paper: Proposition 11.1.1.2(2), p. 476. At each idele in the given set,
 the absolute orbit-sum tails can be made small uniformly in the sequence index.
@@ -66,12 +75,83 @@ def HasUniformThetaTails (φ : ℕ → 𝕀[F] → ℂ) (Z : Set 𝕀[F]) : Prop
   ∀ g ∈ Z, ∀ ε : ℝ≥0∞, 0 < ε → ∃ s : Finset Fˣ, ∀ k,
     (∑' ξ : {ξ : Fˣ // ξ ∉ s}, ‖φ k (principal ξ.val * g)‖ₑ) < ε
 
+/-- A family of complex numbers has arbitrarily small tails over the complements of
+finite sets exactly when it is absolutely summable. -/
+private theorem enorm_tails_lt_iff_summable_norm {ι : Type*} (a : ι → ℂ) :
+    (∀ ε : ℝ≥0∞, 0 < ε → ∃ s : Finset ι, (∑' i : {i : ι // i ∉ s}, ‖a i.val‖ₑ) < ε) ↔
+      Summable (fun i ↦ ‖a i‖) := by
+  have hcoe : (∑' i, ‖a i‖ₑ) ≠ ⊤ ↔ Summable (fun i ↦ ‖a i‖) :=
+    (ENNReal.tsum_coe_ne_top_iff_summable (f := fun i ↦ ‖a i‖₊)).trans NNReal.summable_coe.symm
+  refine ⟨fun h ↦ hcoe.mp ?_, fun h ε hε ↦ ?_⟩
+  · -- One finite set with tail below one bounds the whole series.
+    obtain ⟨s, hs⟩ := h 1 one_pos
+    have hfin : (∑ i ∈ s, ‖a i‖ₑ) < ⊤ := ENNReal.sum_lt_top.mpr fun _ _ ↦ eNorm_lt_top
+    have hsplit := sum_add_tsum_compl s fun i ↦ ‖a i‖ₑ
+    exact (hsplit ▸ ENNReal.add_lt_top.mpr ⟨hfin, hs.trans ENNReal.one_lt_top⟩).ne
+  · -- A finite total mass makes the tails over finite complements tend to zero.
+    exact ((ENNReal.tendsto_tsum_compl_atTop_zero (hcoe.mpr h)).eventually
+      (gt_mem_nhds hε)).exists
+
 /-- Paper: Proposition 11.1.1.2(2), p. 476. A constant sequence has
 uniform tails exactly when its orbit series are absolutely summable.
 Deviation: This checks the extra tail hypothesis. -/
 theorem hasUniformThetaTails_const_iff (f : 𝕀[F] → ℂ) (Z : Set 𝕀[F]) :
     HasUniformThetaTails (fun _ ↦ f) Z ↔
-      ∀ g ∈ Z, Summable (fun ξ : Fˣ ↦ ‖f (principal ξ * g)‖) := by sorry
+      ∀ g ∈ Z, Summable (fun ξ : Fˣ ↦ ‖f (principal ξ * g)‖) := by
+  refine forall₂_congr fun g _ ↦ ?_
+  change (∀ ε : ℝ≥0∞, 0 < ε → ∃ s : Finset Fˣ, ∀ _ : ℕ,
+      (∑' ξ : {ξ : Fˣ // ξ ∉ s}, ‖f (principal ξ.val * g)‖ₑ) < ε) ↔ _
+  exact (forall₂_congr fun ε _ ↦ exists_congr fun s ↦ forall_const ℕ).trans
+    (enorm_tails_lt_iff_summable_norm fun ξ : Fˣ ↦ f (principal ξ * g))
+
+/-- The orbit series of a Schwartz–Bruhat function at an idele is absolutely summable. -/
+private theorem summable_norm_ideleValue_orbit (φ : ℬ[F]) (g : 𝕀[F]) :
+    Summable (fun ξ : Fˣ ↦ ‖ideleValue φ (principal ξ * g)‖) := by
+  have h := (adelicAverage_summableUniformlyOn (F := F) φ {(g, 0)} isCompact_singleton).summable
+    (Set.mem_singleton (g, (0 : 𝔸[F])))
+  refine h.congr fun ξ ↦ ?_
+  change ‖φ (Multiplicative.ofAdd (g.val * (algebraMap F 𝔸[F] (ξ : F) + 0)))‖ =
+    ‖φ (Multiplicative.ofAdd (algebraMap F 𝔸[F] (ξ : F) * g.val))‖
+  rw [add_zero, mul_comm]
+
+/-- If the orbit sums of an approximating sequence stay below a bound, so do the finite
+partial sums of the orbit series of the pointwise limit. -/
+private theorem sum_norm_orbit_le_of_tendsto_of_le (φ : ℕ → ℬ[F]) (f : 𝕀[F] → ℂ) (g : 𝕀[F])
+    (hlim : ∀ ξ : Fˣ, Tendsto (fun k ↦ ideleValue (φ k) (principal ξ * g)) atTop
+      (𝓝 (f (principal ξ * g))))
+    (c : ℝ) (hc : ∀ k, (∑' ξ : Fˣ, ‖ideleValue (φ k) (principal ξ * g)‖) ≤ c)
+    (s : Finset Fˣ) : ∑ ξ ∈ s, ‖f (principal ξ * g)‖ ≤ c := by
+  have hsum : Tendsto (fun k ↦ ∑ ξ ∈ s, ‖ideleValue (φ k) (principal ξ * g)‖) atTop
+      (𝓝 (∑ ξ ∈ s, ‖f (principal ξ * g)‖)) :=
+    tendsto_finsetSum s fun ξ _ ↦ (hlim ξ).norm
+  exact le_of_tendsto' hsum fun k ↦
+    ((summable_norm_ideleValue_orbit (φ k) g).sum_le_tsum s fun _ _ ↦ norm_nonneg _).trans (hc k)
+
+/-- If the orbit sums of an approximating sequence stay below a bound, the orbit series
+of the pointwise limit is absolutely summable. -/
+private theorem summable_norm_orbit_of_tendsto_of_le (φ : ℕ → ℬ[F]) (f : 𝕀[F] → ℂ) (g : 𝕀[F])
+    (hlim : ∀ ξ : Fˣ, Tendsto (fun k ↦ ideleValue (φ k) (principal ξ * g)) atTop
+      (𝓝 (f (principal ξ * g))))
+    (c : ℝ) (hc : ∀ k, (∑' ξ : Fˣ, ‖ideleValue (φ k) (principal ξ * g)‖) ≤ c) :
+    Summable (fun ξ : Fˣ ↦ ‖f (principal ξ * g)‖) :=
+  summable_of_sum_le (fun _ ↦ norm_nonneg _) (sum_norm_orbit_le_of_tendsto_of_le φ f g hlim c hc)
+
+/-- Extended by zero from a Borel set, each translate of a pointwise limit of
+Schwartz–Bruhat functions is Borel measurable. -/
+private theorem measurable_indicator_translate_of_tendsto (φ : ℕ → ℬ[F]) (f : 𝕀[F] → ℂ)
+    {Z : Set 𝕀[F]} (hZ : MeasurableSet Z) (ξ : Fˣ)
+    (hlim : ∀ g ∈ Z, Tendsto (fun k ↦ ideleValue (φ k) (principal ξ * g)) atTop
+      (𝓝 (f (principal ξ * g)))) :
+    Measurable (Z.indicator fun g ↦ f (principal ξ * g)) := by
+  have hborel : BorelSpace 𝕀[F] := ⟨rfl⟩
+  have hk : ∀ k, Measurable
+      (Z.indicator fun g : 𝕀[F] ↦ ideleValue (φ k) (principal ξ * g)) := fun k ↦
+    ((schwartzBruhat_continuous (φ k)).comp (continuous_ofAdd.comp
+      (Units.continuous_val.comp (continuous_const_mul (principal ξ))))).measurable.indicator hZ
+  refine measurable_of_tendsto_metrizable hk (tendsto_pi_nhds.mpr fun g ↦ ?_)
+  by_cases hg : g ∈ Z
+  · simpa only [Set.indicator_of_mem hg] using hlim g hg
+  · simpa only [Set.indicator_of_notMem hg] using tendsto_const_nhds
 
 -- TODO(paper-gap): The limit is specified on Z, but (11.1.1.3) uses all of Fˣ Z.
 -- Under the ideal-series interpretation, (11.1.1.2) on the whole saturation
@@ -96,7 +176,11 @@ theorem summable_ideleThetaSum_of_dominated
         MemLp (fractionalIdealOrbitSum I α) (ENNReal.ofReal r) (η.restrict Z) ∧
         ∀ g : 𝕀[F], g ∈ Z → ∀ k,
           (∑' ξ : Fˣ, ‖ideleValue (φ k) (principal ξ * g)‖) ≤ fractionalIdealOrbitSum I α g) :
-    ∀ g : 𝕀[F], g ∈ Z → Summable (fun ξ : Fˣ ↦ ‖f (principal ξ * g)‖) := by sorry
+    ∀ g : 𝕀[F], g ∈ Z → Summable (fun ξ : Fˣ ↦ ‖f (principal ξ * g)‖) := by
+  intro g hg
+  refine hmajorant.elim fun α hα ↦ hα.elim fun I hI ↦ ?_
+  exact summable_norm_orbit_of_tendsto_of_le φ f g
+    (fun ξ ↦ hlim _ (Set.mem_iUnion.mpr ⟨ξ, g, hg, rfl⟩)) _ (hI.2.2.2.2 g hg)
 
 /-- Paper: Proposition 11.1.1.2(1), p. 476. Extending the limit theta
 series by zero from the Borel set gives a Borel function on the ideles.
@@ -114,7 +198,32 @@ theorem measurable_indicator_ideleThetaSum_of_dominated
         MemLp (fractionalIdealOrbitSum I α) (ENNReal.ofReal r) (η.restrict Z) ∧
         ∀ g : 𝕀[F], g ∈ Z → ∀ k,
           (∑' ξ : Fˣ, ‖ideleValue (φ k) (principal ξ * g)‖) ≤ fractionalIdealOrbitSum I α g) :
-    Measurable (Z.indicator (ideleThetaSum f)) := by sorry
+    Measurable (Z.indicator (ideleThetaSum f)) := by
+  have hborel : BorelSpace 𝕀[F] := ⟨rfl⟩
+  have hF : Countable F := (Module.finBasis ℚ F).equivFun.injective.countable
+  have hFu : Countable Fˣ := Units.val_injective.countable
+  have hsum := summable_ideleThetaSum_of_dominated φ f Z hlim hZ η hη r hr hmajorant
+  -- Extend each term of the series by zero, so that it is a limit of Borel functions.
+  let h : Fˣ → 𝕀[F] → ℂ := fun ξ ↦ Z.indicator fun g ↦ f (principal ξ * g)
+  have hh : ∀ ξ, Measurable (h ξ) := fun ξ ↦
+    measurable_indicator_translate_of_tendsto φ f hZ ξ fun g hg ↦
+      hlim _ (Set.mem_iUnion.mpr ⟨ξ, g, hg, rfl⟩)
+  have heq : Z.indicator (ideleThetaSum f) = fun g ↦ ∑' ξ, h ξ g := by
+    funext g
+    by_cases hg : g ∈ Z
+    · simp only [h, Set.indicator_of_mem hg]
+      rfl
+    · simp only [h, Set.indicator_of_notMem hg, tsum_zero]
+  have hsummable : ∀ g, Summable fun ξ ↦ h ξ g := by
+    intro g
+    by_cases hg : g ∈ Z
+    · simpa only [h, Set.indicator_of_mem hg] using (hsum g hg).of_norm
+    · simpa only [h, Set.indicator_of_notMem hg] using summable_zero
+  rw [heq]
+  -- The finite partial sums are Borel and converge pointwise along the finite subsets.
+  exact measurable_of_tendsto_metrizable' (atTop : Filter (Finset Fˣ))
+    (f := fun s g ↦ ∑ ξ ∈ s, h ξ g) (fun s ↦ Finset.measurable_sum s fun ξ _ ↦ hh ξ)
+    (tendsto_pi_nhds.mpr fun g ↦ (hsummable g).hasSum)
 
 /-- Paper: Proposition 11.1.1.2(2), p. 476. The limit theta sum is in
 the finite-exponent Lᵣ space for the measure restricted to the Borel set.
@@ -132,7 +241,23 @@ theorem memLp_ideleThetaSum_of_dominated
         MemLp (fractionalIdealOrbitSum I α) (ENNReal.ofReal r) (η.restrict Z) ∧
         ∀ g : 𝕀[F], g ∈ Z → ∀ k,
           (∑' ξ : Fˣ, ‖ideleValue (φ k) (principal ξ * g)‖) ≤ fractionalIdealOrbitSum I α g) :
-    MemLp (Z.indicator (ideleThetaSum f)) (ENNReal.ofReal r) (η.restrict Z) := by sorry
+    MemLp (Z.indicator (ideleThetaSum f)) (ENNReal.ofReal r) (η.restrict Z) := by
+  have hmeas : AEStronglyMeasurable (Z.indicator (ideleThetaSum f)) (η.restrict Z) :=
+    (measurable_indicator_ideleThetaSum_of_dominated φ f Z hlim hZ η hη r hr
+      hmajorant).aestronglyMeasurable
+  refine hmajorant.elim fun α hα ↦ hα.elim fun I hI ↦ ?_
+  -- On the Borel set the limit theta sum is dominated by the majorant series.
+  refine hI.2.2.2.1.of_le hmeas ((ae_restrict_iff' hZ).mpr (Eventually.of_forall fun g hg ↦ ?_))
+  have hlim' : ∀ ξ : Fˣ, Tendsto (fun k ↦ ideleValue (φ k) (principal ξ * g)) atTop
+      (𝓝 (f (principal ξ * g))) := fun ξ ↦ hlim _ (Set.mem_iUnion.mpr ⟨ξ, g, hg, rfl⟩)
+  rw [Set.indicator_of_mem hg]
+  calc ‖ideleThetaSum f g‖ ≤ ∑' ξ : Fˣ, ‖f (principal ξ * g)‖ :=
+        norm_tsum_le_tsum_norm
+          (summable_norm_orbit_of_tendsto_of_le φ f g hlim' _ (hI.2.2.2.2 g hg))
+    _ ≤ fractionalIdealOrbitSum I α g :=
+        Real.tsum_le_of_sum_le (fun _ ↦ norm_nonneg _)
+          (sum_norm_orbit_le_of_tendsto_of_le φ f g hlim' _ (hI.2.2.2.2 g hg))
+    _ ≤ ‖fractionalIdealOrbitSum I α g‖ := Real.le_norm_self _
 
 /-- Paper: Proposition 11.1.1.2(2), p. 476. Each approximating theta sum
 belongs to the Lᵣ space for the restricted measure.
@@ -149,7 +274,20 @@ theorem memLp_adelicTheta_of_dominated
         ∀ g : 𝕀[F], g ∈ Z → ∀ k,
           (∑' ξ : Fˣ, ‖ideleValue (φ k) (principal ξ * g)‖) ≤ fractionalIdealOrbitSum I α g) :
     ∀ k, MemLp (fun g ↦ adelicTheta (φ k) (classOf g))
-      (ENNReal.ofReal r) (η.restrict Z) := by sorry
+      (ENNReal.ofReal r) (η.restrict Z) := by
+  intro k
+  have hborel : BorelSpace 𝕀[F] := ⟨rfl⟩
+  have hmeas : AEStronglyMeasurable (fun g : 𝕀[F] ↦ adelicTheta (φ k) (classOf g))
+      (η.restrict Z) :=
+    ((adelicTheta (φ k)).continuous.comp QuotientGroup.continuous_mk).aestronglyMeasurable
+  refine hmajorant.elim fun α hα ↦ hα.elim fun I hI ↦ ?_
+  -- On the Borel set each theta function is dominated by the majorant series.
+  refine hI.2.2.2.1.of_le hmeas ((ae_restrict_iff' hZ).mpr (Eventually.of_forall fun g hg ↦ ?_))
+  rw [← ideleThetaSum_schwartzBruhat]
+  calc ‖ideleThetaSum (ideleValue (φ k)) g‖ ≤ ∑' ξ : Fˣ, ‖ideleValue (φ k) (principal ξ * g)‖ :=
+        norm_tsum_le_tsum_norm (summable_norm_ideleValue_orbit (φ k) g)
+    _ ≤ fractionalIdealOrbitSum I α g := hI.2.2.2.2 g hg k
+    _ ≤ ‖fractionalIdealOrbitSum I α g‖ := Real.le_norm_self _
 
 /-- Paper: Proposition 11.1.1.2(2), p. 476. The approximating theta
 functions converge to the limit theta sum in the restricted Lᵣ norm.
@@ -175,7 +313,14 @@ theorem tendsto_eLpNorm_ideleThetaSum_of_dominated
 /-- Paper: Remark 11.1.1.3, p. 476. The saturation of a Borel set under
 the countable group of principal ideles is Borel. -/
 theorem measurableSet_principalIdeleSaturation {Z : Set 𝕀[F]} (hZ : MeasurableSet Z) :
-    MeasurableSet (saturation Z) := by sorry
+    MeasurableSet (saturation Z) := by
+  have hborel : BorelSpace 𝕀[F] := ⟨rfl⟩
+  have hF : Countable F := (Module.finBasis ℚ F).equivFun.injective.countable
+  have hFu : Countable Fˣ := Units.val_injective.countable
+  refine MeasurableSet.iUnion fun ξ ↦ ?_
+  -- Each translate is the preimage of the set under the inverse translation.
+  rw [Set.image_mul_left]
+  exact (continuous_const_mul (principal ξ)⁻¹).measurable hZ
 
 section FundamentalDomain
 
@@ -206,7 +351,10 @@ theorem summable_ideleThetaSum_on_fundamentalDomain
       Summable (fun ξ : {ξ : Fˣ // (ξ.val : F) ∈ I} ↦ (α ξ.val : ℝ)) ∧
       (g ∈ TE₁ → ∀ k, (∑' ξ : Fˣ, ‖ideleValue (φ k) (principal ξ * g)‖) ≤
         ∑' ξ : {ξ : Fˣ // (ξ.val : F) ∈ I}, (α ξ.val : ℝ))) :
-    ∀ g ∈ TE₁, Summable (fun ξ : Fˣ ↦ ‖f (principal ξ * g)‖) := by sorry
+    ∀ g ∈ TE₁, Summable (fun ξ : Fˣ ↦ ‖f (principal ξ * g)‖) := by
+  intro g hg
+  refine (hmajorant g).elim fun α hα ↦ hα.elim fun I hI ↦ ?_
+  exact summable_norm_orbit_of_tendsto_of_le φ f g (fun ξ ↦ hlim _) _ (hI.2 hg)
 
 include he_norm he_one hrep₁ hrep in
 /-- Paper: Corollary 11.1.1.4, p. 478. The approximating theta functions
