@@ -185,7 +185,31 @@ The eigenspace in the S-local theta dual is the line through the descended gener
 The weight condition is tested after pullback to Schwartz–Bruhat functions. -/
 theorem sLocalThetaEigendistributions_eq_span (c : QuasiCharacter Jₛ) :
     (sLocalEigendistributions c).comap (pull(Kₛ)).toLinearMap =
-      Submodule.span ℂ {sLocalThetaEigendistribution c} := by sorry
+      Submodule.span ℂ {sLocalThetaEigendistribution c} := by
+  -- Pullback along the quotient map is injective and sends the descended generator to
+  -- the generator of the eigenline upstairs.
+  have quotientLine {M : Type _} [AddCommGroup M] [Module ℂ M] [TopologicalSpace M]
+      (K : Submodule ℂ M) (W : Submodule ℂ (StrongDual ℂ M))
+      (T : StrongDual ℂ M) (U : StrongDual ℂ (M ⧸ K)) (hW : W = Submodule.span ℂ {T})
+      (hU : ∀ f, U (K.mkQL f) = T f) :
+      W.comap (pull(K)).toLinearMap = Submodule.span ℂ {U} := by
+    let L := (pull(K)).toLinearMap
+    have hinj : Injective L := by
+      intro a b h
+      apply ContinuousLinearMap.ext
+      intro x
+      obtain ⟨f, rfl⟩ := K.mkQ_surjective x
+      exact congrArg (fun t : StrongDual ℂ M ↦ t f) h
+    have he : L U = T := ContinuousLinearMap.ext hU
+    have hm : (Submodule.span ℂ {U}).map L = W := by
+      rw [Submodule.map_span, Set.image_singleton, he, hW]
+    exact (congrArg (fun p : Submodule ℂ (StrongDual ℂ M) ↦ p.comap L) hm.symm).trans
+      (Submodule.comap_map_eq_of_injective hinj _)
+  exact quotientLine (M := ℬ(Aₛ)) (Kₛ) (sLocalEigendistributions (F := F) (S := S) c)
+    (sLocalNormalizedEigendistribution (F := F) (S := S) c)
+    (sLocalThetaEigendistribution (F := F) (S := S) c)
+    (sLocalEigendistributions_eq_span (F := F) (S := S) c)
+    (sLocalThetaEigendistribution_mk (F := F) (S := S) c)
 
 /-- Paper: Theorem 5.5.1.2(2), p. 278.
 The normalized S-local family in the strong dual of the theta quotient is holomorphic. -/
@@ -574,6 +598,68 @@ theorem sLocalThetaEigendistributions_separate (x : SLocalAdelicThetaSpace F S)
       (sLocalThetaEigendistribution (F := F) (S := S))
       (sLocalThetaEigendistributions_dense_span (F := F) (S := S)) x hx
 
+/-- Removing the real power prescribed by the abscissa leaves a unitary character. -/
+private theorem exists_unitary_normTwist_eq {G : Type*} [CommGroup G] [TopologicalSpace G]
+    [IsTopologicalGroup G] [T2Space G] [LocallyCompactSpace G] (m : G →* ℝ≥0ˣ)
+    (hp : IsProperMap m) (hne : ∃ g, m g ≠ 1) (c : QuasiCharacter G) :
+    ∃ (χ : PontryaginDual G) (s : ℂ),
+      c = quasiCharacterNormTwist m hp.continuous ((circleToComplex).comp χ) s := by
+  let a := quasiCharacterAbscissa m hp hne c
+  let d := quasiCharacterNormTwist m hp.continuous c (-(a : ℂ))
+  have hrad (g : G) : (((m g : ℝ≥0) : ℝ) : ℂ) ^ (a : ℂ) = (‖c g‖ : ℂ) := by
+    rw [← Complex.ofReal_cpow (NNReal.coe_nonneg _) a,
+      norm_quasiCharacter_eq_rpow_abscissa m hp hne]
+  have hd (g : G) : d g = c g / (‖c g‖ : ℂ) := by
+    change c g * _ ^ (-(a : ℂ)) = _
+    rw [Complex.cpow_neg, hrad, div_eq_mul_inv]
+  have hn (g : G) : ‖c g‖ ≠ 0 := norm_ne_zero_iff.mpr ((Group.isUnit g).map c).ne_zero
+  let χ : PontryaginDual G :=
+    { toFun := fun g ↦ ⟨d g, mem_sphere_zero_iff_norm.mpr (by
+        rw [hd, norm_div, Complex.norm_of_nonneg (norm_nonneg _), div_self (hn g)])⟩
+      map_one' := Subtype.ext d.map_one
+      map_mul' x y := Subtype.ext (d.map_mul x y)
+      continuous_toFun := d.continuous.subtype_mk _ }
+  refine ⟨χ, (a : ℂ), ContinuousMonoidHom.ext fun g ↦ ?_⟩
+  change c g = d g * (((m g : ℝ≥0) : ℝ) : ℂ) ^ (a : ℂ)
+  rw [hd, hrad, div_mul_cancel₀ _ (Complex.ofReal_ne_zero.mpr (hn g))]
+
+/-- Every S-local quasi-character lies on the norm-twist chart of a unitary character. -/
+private theorem exists_sLocal_chart_eq (c : QuasiCharacter Jₛ) :
+    ∃ (χ : PontryaginDual Jₛ) (s : ℂ), c = chartₛ(χ) s := by
+  let : LocallyCompactSpace (SAdeleRing F S)ˣ := (sIdeleGroup_description F S).2.2.1
+  have := isClosed_sProjectedDiagonal (F := F) (S := S)
+  have hne : ∃ g, mₛ g ≠ 1 := by
+    obtain ⟨τ, hτ⟩ := sIdeleQuotientNorm_exists_section F S
+    obtain ⟨t, ht⟩ := exists_ne (1 : ℝ≥0ˣ)
+    exact ⟨τ t, (hτ t).trans_ne ht⟩
+  exact exists_unitary_normTwist_eq mₛ (isProperMap_sIdeleQuotientNorm F S) hne c
+
+/-- Evaluating a holomorphic family of continuous functionals at a point gives an entire
+function. -/
+private theorem differentiable_strongDual_apply {M : Type*} [AddCommGroup M] [Module ℂ M]
+    [TopologicalSpace M] [IsTopologicalAddGroup M] [ContinuousSMul ℂ M]
+    {G : ℂ → StrongDual ℂ M} (hG : VectorHolomorphicOn G univ) (x : M) :
+    Differentiable ℂ (fun z : ℂ ↦ G z x) := by
+  let ev : StrongDual ℂ M →L[ℂ] ℂ :=
+    ⟨⟨⟨fun T ↦ T x, fun _ _ ↦ rfl⟩, fun _ _ ↦ rfl⟩, continuous_eval_const x⟩
+  intro z
+  have h := hG.hasFDerivAt (Filter.univ_mem : (univ : Set ℂ) ∈ 𝓝 z)
+  have hj : HasFDerivAt (ev ∘ G) (ev.comp (fderiv ℂ G z)) z := by
+    apply HasFDerivAt.of_isLittleOTVS
+    simpa only [Function.comp_def, ContinuousLinearMap.comp_apply, map_sub]
+      using ev.isBigOTVS_comp.trans_isLittleOTVS h.isLittleOTVS
+  exact hj.differentiableAt
+
+/-- An entire function vanishing on a set with an accumulation point vanishes identically. -/
+private theorem eq_zero_of_accumulation_of_differentiable {φ : ℂ → ℂ} (hφ : Differentiable ℂ φ)
+    {A : Set ℂ} {z₀ : ℂ} (hz₀ : z₀ ∈ closure (A \ {z₀})) (hA : ∀ w ∈ A, φ w = 0) (s : ℂ) :
+    φ s = 0 := by
+  have hfreq : ∃ᶠ w in 𝓝[≠] z₀, φ w = 0 := by
+    rw [frequently_nhdsWithin_iff]
+    exact (mem_closure_iff_frequently.mp hz₀).mono fun w hw ↦ ⟨hA w hw.1, hw.2⟩
+  exact (AnalyticOnNhd.eqOn_zero_of_preconnected_of_frequently_eq_zero
+    (fun z _ ↦ hφ.analyticAt z) isPreconnected_univ (mem_univ z₀) hfreq) (mem_univ s)
+
 /-- Paper: Remark 5.5.3.3, p. 285.
 The eigendistributions with weights in a set that has an accumulation point in every
 norm chart separate points of ordinary theta space.
@@ -583,7 +669,19 @@ theorem sLocalThetaEigendistributions_separate_of_accumulation
     (hW : ∀ χ : PontryaginDual Jₛ, ∃ z : ℂ,
       z ∈ closure ((chartₛ(χ) ⁻¹' W) \ {z}))
     (x : SLocalAdelicThetaSpace F S)
-    (hx : ∀ c ∈ W, sLocalThetaEigendistribution c x = 0) : x = 0 := by sorry
+    (hx : ∀ c ∈ W, sLocalThetaEigendistribution c x = 0) : x = 0 := by
+  refine sLocalThetaEigendistributions_separate x fun c ↦ ?_
+  refine (exists_sLocal_chart_eq (F := F) (S := S) c).elim fun χ hs ↦ hs.elim fun s hc ↦ ?_
+  rw [hc]
+  -- The values along a chart form an entire function whose zeros accumulate.
+  have hφ := differentiable_strongDual_apply
+    (sLocalThetaEigendistribution_holomorphic (F := F) (S := S) χ) x
+  have hA : ∀ w ∈ chartₛ(χ) ⁻¹' W,
+      sLocalThetaEigendistribution (F := F) (S := S) (chartₛ(χ) w) x = 0 :=
+    fun w hw ↦ hx (chartₛ(χ) w) (Set.mem_preimage.mp hw)
+  exact (hW χ).elim fun z₀ hz₀ ↦ eq_zero_of_accumulation_of_differentiable
+    (φ := fun z : ℂ ↦ sLocalThetaEigendistribution (F := F) (S := S) (chartₛ(χ) z) x)
+    (A := chartₛ(χ) ⁻¹' W) hφ hz₀ hA s
 
 /-- Paper: Theorem 5.5.3.4(1), p. 285.
 Pullback from the homogeneous global theta quotient is a topological embedding
