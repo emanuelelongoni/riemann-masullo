@@ -77,7 +77,7 @@ def sLocalPrincipalPartCoeff (c : Xₛ) (k : ℕ) : StrongDual ℂ ℬₛ :=
 /-- Paper: Theorem 7.2.1.1(1), p. 334.
 The bundled functional evaluates to the coefficient of the Laurent power `-k`. -/
 theorem sLocalPrincipalPartCoeff_apply (c : Xₛ) (k : ℕ) (f : ℬₛ) :
-    sLocalPrincipalPartCoeff c k f = sLocalZLaurentCoeff f c (-(k : ℤ)) := by sorry
+    sLocalPrincipalPartCoeff c k f = sLocalZLaurentCoeff f c (-(k : ℤ)) := rfl
 
 -- TODO(paper-gap): In Theorem 7.2.1.1(2), lower coefficients at a multiple
 -- pole mix with higher ones under translation. The leading coefficient has
@@ -103,7 +103,7 @@ The descended coefficient recovers the original coefficient on a test representa
 theorem sLocalThetaPrincipalPartCoeff_mk (ω : PontryaginDual J₁) (c : Xₛ)
     (hc : onComponent(c, ω)) (k : ℕ) (f : ℬₛ) :
     sLocalThetaPrincipalPartCoeff ω c hc k ((Kₛ(ω)).mkQL f) =
-      sLocalZLaurentCoeff f c (-(k : ℤ)) := by sorry
+      sLocalZLaurentCoeff f c (-(k : ℤ)) := rfl
 
 /-- Paper: Theorem 7.2.1.1(2), p. 334.
 Translation acts on coefficients of nonpositive exponent by an upper triangular formula.
@@ -235,7 +235,9 @@ def sLocalSelectedPoleMultiplicity (SArch : Finset (InfinitePlace F)) (S₀ : Fi
 /-- Paper: Equations (7.2.2.1)–(7.2.2.2), pp. 338–339.
 Selecting just the finite places gives the multiplicity used for principal values. -/
 theorem sLocalSelectedPoleMultiplicity_finite (S₀ : Finset Places) (c : Xₛ) :
-    sLocalSelectedPoleMultiplicity ∅ S₀ c = sLocalFinitePoleMultiplicity S₀ c := by sorry
+    sLocalSelectedPoleMultiplicity ∅ S₀ c = sLocalFinitePoleMultiplicity S₀ c := by
+  classical
+  rw [sLocalSelectedPoleMultiplicity, Finset.inter_empty, Finset.card_empty, zero_add]
 
 /-- Paper: Equations (7.2.2.1)–(7.2.2.2), pp. 338–339.
 Selecting every place recovers the full pole order. -/
@@ -272,7 +274,8 @@ theorem sLocalThetaRemovedPrincipalParts_mk (ω : PontryaginDual J₁)
     (SArch : Finset (InfinitePlace F)) (S₀ : Finset Places) (f : ℬₛ)
     (i : removedIndices(ω, SArch, S₀)) :
     sLocalThetaRemovedPrincipalParts ω SArch S₀ ((Kₛ(ω)).mkQ f) i =
-      sLocalZLaurentCoeff f i.val.1 (-(i.val.2 : ℤ)) := by sorry
+      sLocalZLaurentCoeff f i.val.1 (-(i.val.2 : ℤ)) :=
+  sLocalThetaPrincipalPartCoeff_mk ω i.val.1 i.property.1 i.val.2 f
 
 /-- Paper: Remark 7.2.1.2, p. 335.
 On the Mellin image, the classes with the remaining pole bound are exactly the
@@ -507,8 +510,9 @@ def sAdelePolarSubspace : Submodule ℂ ℬₛ :=
 Membership requires both the test and its Fourier transform to vanish at zero. -/
 theorem mem_sAdelePolarSubspace (f : ℬₛ) :
     f ∈ sAdelePolarSubspace F S ↔
-      f (Multiplicative.ofAdd 0) = 0 ∧ sAdeleSchwartzFourier f (Multiplicative.ofAdd 0) = 0 :=
-  by sorry
+      f (Multiplicative.ofAdd 0) = 0 ∧ sAdeleSchwartzFourier f (Multiplicative.ofAdd 0) = 0 := by
+  change (f (Multiplicative.ofAdd 0), sAdeleSchwartzFourier f (Multiplicative.ofAdd 0)) = 0 ↔ _
+  exact Prod.mk_eq_zero
 
 /-- Paper: Corollary 7.2.2.2, p. 340.
 Insertion with integer indicators outside S preserves the two zero evaluations
