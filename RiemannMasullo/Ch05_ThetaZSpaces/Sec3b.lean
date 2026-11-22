@@ -299,7 +299,29 @@ With no factors the projective tensor product identifies topologically with the 
 and the empty pure tensor maps to one. -/
 theorem finiteProjectiveTensor_empty_equiv :
     ∃ e : FiniteProjectiveTensor (fun _ : Empty ↦ ℂ) ≃L[ℂ] ℂ,
-      e (⨂ₜ[ℂ] i : Empty, (0 : ℂ)) = 1 := by sorry
+      e (⨂ₜ[ℂ] i : Empty, (0 : ℂ)) = 1 := by
+  let X := ⨂[ℂ] _i : Empty, ℂ
+  let P : SeminormFamily ℂ X
+      {p : Seminorm ℂ X // Continuous (fun f : Empty → ℂ ↦ p (⨂ₜ[ℂ] i, f i))} := fun p ↦ p.val
+  let l : WithGeneratingSeminorms X P ≃ₗ[ℂ] ℂ := PiTensorProduct.isEmptyEquiv Empty
+  have hP := withGeneratingSeminorms_spec X P
+  have : ContinuousSMul ℂ (WithGeneratingSeminorms X P) := hP.continuousSMul
+  -- The norm of the scalar coordinate is one of the generating seminorms.
+  have hl : Continuous l := by
+    let q : Seminorm ℂ X := (normSeminorm ℂ ℂ).comp (PiTensorProduct.isEmptyEquiv Empty).toLinearMap
+    have hq : Continuous (fun f : Empty → ℂ ↦ q (⨂ₜ[ℂ] i, f i)) := continuous_of_discreteTopology
+    refine WithSeminorms.continuous_normedSpace_rng ℂ hP l.toLinearMap
+      ⟨{⟨q, hq⟩}, 1, Seminorm.le_def.mpr fun x ↦ ?_⟩
+    have hx : (({⟨q, hq⟩} : Finset _).sup P) x = q x :=
+      congrArg (fun p : Seminorm ℂ X ↦ p x) Finset.sup_singleton
+    exact le_of_eq (hx.symm.trans (one_smul ℝ≥0 _).symm)
+  have hl' : Continuous l.symm := by
+    have hsymm : (l.symm : ℂ → WithGeneratingSeminorms X P) = fun c ↦ c • l.symm 1 := by
+      funext c
+      rw [← map_smul, smul_eq_mul, mul_one]
+    rw [hsymm]
+    fun_prop
+  exact ⟨⟨l, hl, hl'⟩, PiTensorProduct.isEmptyEquiv_apply_tprod Empty _⟩
 
 -- TODO(paper-gap): If 0 ∉ I the factors S_I need not be unweighted Schwartz–Bruhat,
 -- whereas (5.3.3.6) requires this. Include the unweighted twist on each factor.
@@ -499,6 +521,11 @@ local notation "rhoComplex(" n ", " s ")" =>
   ((Complex.I ^ (n).natAbs) *
     (Complex.Gammaℂ (s + ((n).natAbs : ℂ) / 2) / Complex.Gammaℂ (1 - s + ((n).natAbs : ℂ) / 2)))
 
+/-- Translating the argument preserves meromorphic normal form on the whole plane. -/
+private theorem archimedeanMellin_meromorphicNFOn_comp_add_const {L : ℂ → ℂ}
+    (hL : MeromorphicNFOn L univ) (d : ℂ) : MeromorphicNFOn (fun s ↦ L (s + d)) univ := fun _ _ ↦
+  (meromorphicNFAt_comp_add_const_iff_meromorphicNFAt (f := L)).mpr (hL (mem_univ _))
+
 -- TODO(paper-gap): (5.3.3.28) drops M_{x^n} on the left. Its proof supplies the multiplier.
 
 /-- Paper: Proposition 5.3.3.4(1), p. 258.
@@ -507,7 +534,31 @@ the parity of n.
 Deviation: The multiplier on the left is restored from (5.3.3.32)–(5.3.3.34). -/
 theorem realArchimedeanMellin_monomial (n : ℕ) (ε : Fin 2) (f : 𝓢(ℝ, ℂ)) :
     realArchimedeanMellin (realMonomial(n) f) ε =
-      fun s ↦ realArchimedeanMellin f shiftParity(ε, n) (s + n) := by sorry
+      fun s ↦ realArchimedeanMellin f shiftParity(ε, n) (s + n) := by
+  have hspec := (realArchimedeanMellin_existsUnique f shiftParity(ε, n)).exists.choose_spec
+  have hg : (fun x : ℝ ↦ (x : ℂ) ^ n).HasTemperateGrowth := Complex.hasTemperateGrowth_ofReal.pow n
+  -- On the profiles, the monomial is the Mellin shift by n with the parity moved by n.
+  have hprofile : realProfile(realMonomial(n) f, ε) =
+      fun t : ℝ ↦ (t : ℂ) ^ (n : ℂ) • realProfile(f, shiftParity(ε, n)) t := by
+    funext t
+    have hsign : (-1 : ℂ) ^ (shiftParity(ε, n)).val = (-1) ^ ε.val * (-1) ^ n := by
+      rw [Fin.val_ofNat, ← neg_one_pow_eq_pow_mod_two, pow_add]
+    change SchwartzMap.smulLeftCLM ℂ (fun x : ℝ ↦ (x : ℂ) ^ n) f t +
+        (-1 : ℂ) ^ ε.val * SchwartzMap.smulLeftCLM ℂ (fun x : ℝ ↦ (x : ℂ) ^ n) f (-t) =
+      (t : ℂ) ^ (n : ℂ) • (f t + (-1 : ℂ) ^ (shiftParity(ε, n)).val * f (-t))
+    rw [SchwartzMap.smulLeftCLM_apply_apply hg, SchwartzMap.smulLeftCLM_apply_apply hg, hsign,
+      Complex.cpow_natCast, Complex.ofReal_neg, neg_pow]
+    simp only [smul_eq_mul]
+    ring
+  refine (realArchimedeanMellin_existsUnique (realMonomial(n) f) ε).unique
+    (realArchimedeanMellin_existsUnique (realMonomial(n) f) ε).exists.choose_spec
+    ⟨archimedeanMellin_meromorphicNFOn_comp_add_const hspec.1 n, fun s hs ↦ ?_⟩
+  have hsn : 0 < (s + (n : ℂ)).re := by
+    rw [Complex.add_re, Complex.natCast_re]
+    positivity
+  have h := hspec.2 (s + n) hsn
+  rw [hprofile]
+  exact ⟨MellinConvergent.cpow_smul.mpr h.1, (mellin_cpow_smul _ s n).trans h.2⟩
 
 /-- Paper: Proposition 5.3.3.4(1), p. 258.
 The real monomial Mellin transform satisfies the Fourier relation at the shifted
@@ -524,7 +575,69 @@ Multiplying by zᵖ times the qth power of its conjugate shifts the Mellin expon
 by (p+q)/2 and the angular weight by p−q. -/
 theorem complexArchimedeanMellin_monomial (p q : ℕ) (n : ℤ) (f : 𝓢(ℂ, ℂ)) :
     complexArchimedeanMellin (complexMonomial(p, q) f) n =
-      fun s ↦ complexArchimedeanMellin f (n + (p : ℤ) - q) (s + ((p : ℂ) + q) / 2) := by sorry
+      fun s ↦ complexArchimedeanMellin f (n + (p : ℤ) - q) (s + ((p : ℂ) + q) / 2) := by
+  have hspec := (complexArchimedeanMellin_existsUnique f (n + (p : ℤ) - q)).exists.choose_spec
+  have hg : (fun z : ℂ ↦ z ^ p * star z ^ q).HasTemperateGrowth :=
+    (Function.HasTemperateGrowth.id'.pow p).mul (Complex.conjCLE.hasTemperateGrowth.pow q)
+  have hE (θ : ℝ) : unitAngle(θ) ≠ 0 := Complex.exp_ne_zero _
+  have hstar (θ : ℝ) : star (unitAngle(θ)) = (unitAngle(θ))⁻¹ := by
+    rw [← Complex.exp_neg, Complex.star_def, ← Complex.exp_conj]
+    congr 1
+    simp
+  -- For positive t the monomial contributes the radial power t^((p+q)/2) and the angular
+  -- weight p - q.
+  have hprofile : EqOn (complexProfile(complexMonomial(p, q) f, n))
+      (fun t : ℝ ↦ (t : ℂ) ^ (((p : ℂ) + q) / 2) • complexProfile(f, n + (p : ℤ) - q) t)
+      (Ioi 0) := by
+    intro t ht
+    have ht0 : (0 : ℝ) < t := ht
+    have hroot : (Real.sqrt t : ℂ) ^ (p + q) = (t : ℂ) ^ (((p : ℂ) + q) / 2) := by
+      have hr : Real.sqrt t ^ (p + q) = t ^ (((p : ℝ) + q) / 2) := by
+        rw [Real.sqrt_eq_rpow, ← Real.rpow_natCast, ← Real.rpow_mul ht0.le]
+        congr 1
+        push_cast
+        ring
+      rw [← Complex.ofReal_pow, hr, Complex.ofReal_cpow ht0.le]
+      congr 1
+      push_cast
+      ring
+    change (∫ θ in (0 : ℝ)..(2 * Real.pi), unitAngle(θ) ^ n *
+        SchwartzMap.smulLeftCLM ℂ (fun z : ℂ ↦ z ^ p * star z ^ q) f
+          ((Real.sqrt t : ℂ) * unitAngle(θ))) =
+      (t : ℂ) ^ (((p : ℂ) + q) / 2) • ∫ θ in (0 : ℝ)..(2 * Real.pi),
+        unitAngle(θ) ^ (n + (p : ℤ) - q) * f ((Real.sqrt t : ℂ) * unitAngle(θ))
+    rw [smul_eq_mul, ← intervalIntegral.integral_const_mul]
+    refine intervalIntegral.integral_congr fun θ _ ↦ ?_
+    have hz : star ((Real.sqrt t : ℂ) * unitAngle(θ)) = (Real.sqrt t : ℂ) * (unitAngle(θ))⁻¹ := by
+      rw [star_mul', hstar]
+      congr 1
+      exact Complex.conj_ofReal _
+    change unitAngle(θ) ^ n *
+        SchwartzMap.smulLeftCLM ℂ (fun z : ℂ ↦ z ^ p * star z ^ q) f
+          ((Real.sqrt t : ℂ) * unitAngle(θ)) =
+      (t : ℂ) ^ (((p : ℂ) + q) / 2) *
+        (unitAngle(θ) ^ (n + (p : ℤ) - q) * f ((Real.sqrt t : ℂ) * unitAngle(θ)))
+    rw [SchwartzMap.smulLeftCLM_apply_apply hg, smul_eq_mul, hz, ← hroot, mul_pow, mul_pow,
+      pow_add, zpow_sub₀ (hE θ), zpow_add₀ (hE θ), zpow_natCast, zpow_natCast, inv_pow]
+    ring
+  refine (complexArchimedeanMellin_existsUnique (complexMonomial(p, q) f) n).unique
+    (complexArchimedeanMellin_existsUnique (complexMonomial(p, q) f) n).exists.choose_spec
+    ⟨archimedeanMellin_meromorphicNFOn_comp_add_const hspec.1 _, fun s hs ↦ ?_⟩
+  have hsa : 0 < (s + ((p : ℂ) + q) / 2).re := by
+    have hre : (((p : ℂ) + q) / 2).re = ((p : ℝ) + q) / 2 := by
+      rw [show ((p : ℂ) + q) / 2 = ((((p : ℝ) + q) / 2 : ℝ) : ℂ) by push_cast; ring,
+        Complex.ofReal_re]
+    rw [Complex.add_re, hre]
+    positivity
+  have h := hspec.2 _ hsa
+  have hmul : EqOn
+      (fun t : ℝ ↦ (t : ℂ) ^ (s - 1) • complexProfile(complexMonomial(p, q) f, n) t)
+      (fun t : ℝ ↦ (t : ℂ) ^ (s - 1) •
+        ((t : ℂ) ^ (((p : ℂ) + q) / 2) • complexProfile(f, n + (p : ℤ) - q) t)) (Ioi 0) :=
+    fun t ht ↦ congrArg (fun w : ℂ ↦ (t : ℂ) ^ (s - 1) • w) (hprofile ht)
+  exact ⟨IntegrableOn.congr_fun (MellinConvergent.cpow_smul.mpr h.1) hmul.symm measurableSet_Ioi,
+    (setIntegral_congr_fun measurableSet_Ioi hmul).trans
+      ((mellin_cpow_smul _ s (((p : ℂ) + q) / 2)).trans h.2)⟩
 
 -- TODO(paper-gap): The complex phase in (5.3.3.25) disagrees with the trace-pairing Fourier
 -- transform for nontrivial angular weights. Use the phase from §3.3, per ERRATA I91.
@@ -759,6 +872,231 @@ theorem sLocalArchimedeanPoleMultiplicity_pos_iff (χ : PontryaginDual Jₛ) (s 
   rw [sLocalArchimedeanPoleMultiplicity, Finset.card_pos]
   simp [Finset.Nonempty]
 
+/-- The reciprocal Gamma function satisfies the order recursion coming from
+`1 / Γ(u) = u / Γ(u + 1)`. -/
+private theorem meromorphicOrderAt_inv_Gamma_step (x : ℂ) :
+    meromorphicOrderAt (fun u : ℂ ↦ (Complex.Gamma u)⁻¹) x =
+      meromorphicOrderAt (id : ℂ → ℂ) x +
+        meromorphicOrderAt (fun u : ℂ ↦ (Complex.Gamma u)⁻¹) (x + 1) := by
+  have hg : ∀ y, AnalyticAt ℂ (fun u : ℂ ↦ (Complex.Gamma u)⁻¹) y := fun y ↦
+    Complex.differentiable_one_div_Gamma.analyticAt y
+  have heq : (fun u : ℂ ↦ (Complex.Gamma u)⁻¹) =
+      (id : ℂ → ℂ) * ((fun u : ℂ ↦ (Complex.Gamma u)⁻¹) ∘ (· + 1)) := by
+    funext u
+    exact Complex.one_div_Gamma_eq_self_mul_one_div_Gamma_add_one u
+  have hcomp : MeromorphicAt ((fun u : ℂ ↦ (Complex.Gamma u)⁻¹) ∘ (· + 1)) x :=
+    ((hg (x + 1)).comp (f := fun u : ℂ ↦ u + 1) (by fun_prop)).meromorphicAt
+  calc meromorphicOrderAt (fun u : ℂ ↦ (Complex.Gamma u)⁻¹) x
+      = meromorphicOrderAt ((id : ℂ → ℂ) *
+          ((fun u : ℂ ↦ (Complex.Gamma u)⁻¹) ∘ (· + 1))) x := by rw [← heq]
+    _ = _ := by
+      rw [meromorphicOrderAt_mul analyticAt_id.meromorphicAt hcomp,
+        meromorphicOrderAt_comp_add_const_eq_meromorphicOrderAt]
+
+/-- The reciprocal Gamma function has at most a simple zero at each point. -/
+private theorem meromorphicOrderAt_inv_Gamma_le_one (x : ℂ) :
+    meromorphicOrderAt (fun u : ℂ ↦ (Complex.Gamma u)⁻¹) x ≤ 1 := by
+  have hg : ∀ y, AnalyticAt ℂ (fun u : ℂ ↦ (Complex.Gamma u)⁻¹) y := fun y ↦
+    Complex.differentiable_one_div_Gamma.analyticAt y
+  have hzero : ∀ {f : ℂ → ℂ} {y : ℂ}, AnalyticAt ℂ f y → f y ≠ 0 →
+      meromorphicOrderAt f y = 0 := by
+    intro f y hf hy
+    rw [hf.meromorphicOrderAt_eq, analyticOrderAt_eq_zero.mpr (Or.inr hy), ENat.map_zero,
+      CharP.cast_eq_zero, WithTop.coe_zero]
+  by_cases hx : ∃ m : ℕ, x = -(m : ℂ)
+  · obtain ⟨m, rfl⟩ := hx
+    refine le_of_eq ?_
+    induction m with
+    | zero =>
+      rw [meromorphicOrderAt_inv_Gamma_step, Nat.cast_zero, neg_zero, zero_add,
+        meromorphicOrderAt_id,
+        hzero (hg 1) (by simp [Complex.Gamma_one]), add_zero]
+    | succ m ih =>
+      rw [meromorphicOrderAt_inv_Gamma_step,
+        hzero analyticAt_id (neg_ne_zero.mpr (Nat.cast_ne_zero.mpr (Nat.add_one_ne_zero m))),
+        zero_add, show -((m + 1 : ℕ) : ℂ) + 1 = -(m : ℂ) by push_cast; ring]
+      exact ih
+  · rw [hzero (hg x) (inv_ne_zero (Complex.Gamma_ne_zero fun m hm ↦ hx ⟨m, hm⟩))]
+    exact zero_le_one
+
+/-- Every pole of the Gamma function is simple. -/
+private theorem neg_one_le_meromorphicOrderAt_Gamma (x : ℂ) :
+    ((-1 : ℤ) : WithTop ℤ) ≤ meromorphicOrderAt Complex.Gamma x := by
+  have h := meromorphicOrderAt_inv_Gamma_le_one x
+  have hinv : meromorphicOrderAt (fun u : ℂ ↦ (Complex.Gamma u)⁻¹) x =
+      -meromorphicOrderAt Complex.Gamma x := meromorphicOrderAt_inv
+  rw [hinv] at h
+  cases hn : meromorphicOrderAt Complex.Gamma x with
+  | top => exact le_top
+  | coe n =>
+    rw [hn] at h
+    have h1 : -n ≤ 1 := by exact_mod_cast h
+    exact_mod_cast (by omega : (-1 : ℤ) ≤ n)
+
+/-- Every pole of the real Gamma factor is simple. -/
+private theorem neg_one_le_meromorphicOrderAt_Gammaℝ (x : ℂ) :
+    ((-1 : ℤ) : WithTop ℤ) ≤ meromorphicOrderAt Complex.Gammaℝ x := by
+  have hpi : (Real.pi : ℂ) ≠ 0 := Complex.ofReal_ne_zero.mpr Real.pi_ne_zero
+  have heq : Complex.Gammaℝ = (fun s : ℂ ↦ (Real.pi : ℂ) ^ (-s / 2)) *
+      (Complex.Gamma ∘ fun s : ℂ ↦ s / 2) := by
+    funext s
+    exact Complex.Gammaℝ_def s
+  have han : AnalyticAt ℂ (fun s : ℂ ↦ (Real.pi : ℂ) ^ (-s / 2)) x :=
+    ((differentiable_id.neg.div_const 2).const_cpow (Or.inl hpi)).analyticAt x
+  rw [heq, meromorphicOrderAt_mul_of_ne_zero han (by simp [hpi]),
+    meromorphicOrderAt_comp_of_deriv_ne_zero (by fun_prop) (by simp)]
+  exact neg_one_le_meromorphicOrderAt_Gamma _
+
+/-- Every pole of the complex Gamma factor is simple. -/
+private theorem neg_one_le_meromorphicOrderAt_Gammaℂ (x : ℂ) :
+    ((-1 : ℤ) : WithTop ℤ) ≤ meromorphicOrderAt Complex.Gammaℂ x := by
+  have hpi : (2 * Real.pi : ℂ) ≠ 0 :=
+    mul_ne_zero two_ne_zero (Complex.ofReal_ne_zero.mpr Real.pi_ne_zero)
+  have heq : Complex.Gammaℂ = (fun s : ℂ ↦ 2 * (2 * Real.pi : ℂ) ^ (-s)) * Complex.Gamma := by
+    funext s
+    exact Complex.Gammaℂ_def s
+  have han : AnalyticAt ℂ (fun s : ℂ ↦ 2 * (2 * Real.pi : ℂ) ^ (-s)) x :=
+    ((differentiable_id.neg.const_cpow (Or.inl hpi)).const_mul 2).analyticAt x
+  rw [heq, meromorphicOrderAt_mul_of_ne_zero han (by simp [hpi])]
+  exact neg_one_le_meromorphicOrderAt_Gamma _
+
+/-- Along a norm-twist chart, the restriction to an archimedean place is the restriction
+at exponent zero times the complex power of the local module. -/
+private theorem sLocalInfiniteRestriction_chart_apply (χ : PontryaginDual Jₛ)
+    (w : InfinitePlace F) (z : ℂ) (g : w.Completionˣ) :
+    sLocalInfiniteRestriction w (chartₛ(χ) z) g =
+      sLocalInfiniteRestriction w (chartₛ(χ) 0) g *
+        ((((Units.map nnNormHom.toMonoidHom ^ w.mult : w.Completionˣ →* ℝ≥0ˣ) g : ℝ≥0) : ℝ) :
+          ℂ) ^ z := by
+  obtain ⟨x, hx⟩ : ∃ x : Jₛ, ∀ c : Xₛ, sLocalInfiniteRestriction w c g = c x :=
+    ⟨_, fun _ ↦ rfl⟩
+  have hN : ((((mₛ) x : ℝ≥0) : ℝ) : ℂ) =
+      ((((Units.map nnNormHom.toMonoidHom ^ w.mult : w.Completionˣ →* ℝ≥0ˣ) g : ℝ≥0) : ℝ) :
+        ℂ) := by
+    have he := sLocalInfiniteRestriction_norm (S := S) w g
+    rw [hx] at he
+    change ((1 : PontryaginDual Jₛ) x : ℂ) * ((((mₛ) x : ℝ≥0) : ℝ) : ℂ) ^ (1 : ℂ) = _ at he
+    simpa only [PontryaginDual.one_apply, Circle.coe_one, one_mul, Complex.cpow_one] using he
+  rw [hx, hx, ← hN]
+  change (χ x : ℂ) * ((((mₛ) x : ℝ≥0) : ℝ) : ℂ) ^ z =
+    ((χ x : ℂ) * ((((mₛ) x : ℝ≥0) : ℝ) : ℂ) ^ (0 : ℂ)) * ((((mₛ) x : ℝ≥0) : ℝ) : ℂ) ^ z
+  rw [Complex.cpow_zero, mul_one]
+
+/-- Along a norm-twist chart, the Euler factor at a real place is a translate of the real
+Gamma factor. -/
+private theorem infiniteLocalEulerFactor_chart_real (χ : PontryaginDual Jₛ)
+    (w : InfinitePlace F) (hw : w.IsReal) :
+    ∃ b : ℂ, ∀ z : ℂ, infiniteLocalEulerFactor w
+      (sLocalInfiniteRestriction w (chartₛ(χ) z)) = Complex.Gammaℝ (z + b) := by
+  let e := (InfinitePlace.Completion.ringEquivRealOfIsReal hw).symm
+  have hp := (realLocalEulerParameters w hw
+    (sLocalInfiniteRestriction w (chartₛ(χ) 0))).exists.choose_spec
+  obtain ⟨p, hpdef⟩ : ∃ p : ℂ × Fin 2, p = (realLocalEulerParameters w hw
+    (sLocalInfiniteRestriction w (chartₛ(χ) 0))).exists.choose := ⟨_, rfl⟩
+  rw [← hpdef] at hp
+  refine ⟨p.1 + (p.2.val : ℂ), fun z ↦ ?_⟩
+  have hshape : ∀ x : ℝˣ, sLocalInfiniteRestriction w (chartₛ(χ) z)
+      (Units.map e.toMonoidHom x) =
+        (‖(x : ℝ)‖ : ℂ) ^ (z + p.1) * (if 0 < (x : ℝ) then 1 else (-1 : ℂ)) ^ p.2.val := by
+    intro x
+    have hn : ‖(e (x : ℝ) : w.Completion)‖ = ‖(x : ℝ)‖ :=
+      (InfinitePlace.Completion.isometryEquivRealOfIsReal hw).symm.isometry.norm_map_of_map_zero
+        (map_zero e) (x : ℝ)
+    have hm : (((Units.map nnNormHom.toMonoidHom ^ w.mult : w.Completionˣ →* ℝ≥0ˣ)
+        (Units.map e.toMonoidHom x) : ℝ≥0) : ℝ) = ‖(x : ℝ)‖ := by
+      simp [InfinitePlace.mult, hw, hn]
+    rw [sLocalInfiniteRestriction_chart_apply, hp x, hm,
+      Complex.cpow_add _ _ (Complex.ofReal_ne_zero.mpr (norm_ne_zero_iff.mpr x.ne_zero))]
+    ring
+  have hq := (realLocalEulerParameters w hw (sLocalInfiniteRestriction w (chartₛ(χ) z))).unique
+    (realLocalEulerParameters w hw (sLocalInfiniteRestriction w (chartₛ(χ) z))).exists.choose_spec
+    (y₂ := (z + p.1, p.2)) hshape
+  simp only [infiniteLocalEulerFactor, hw, ↓reduceDIte, hq, add_assoc]
+
+/-- Along a norm-twist chart, the Euler factor at a complex place is half a translate of the
+complex Gamma factor. -/
+private theorem infiniteLocalEulerFactor_chart_complex (χ : PontryaginDual Jₛ)
+    (w : InfinitePlace F) (hw : w.IsComplex) :
+    ∃ b : ℂ, ∀ z : ℂ, infiniteLocalEulerFactor w
+      (sLocalInfiniteRestriction w (chartₛ(χ) z)) = Complex.Gammaℂ (z + b) / 2 := by
+  let e := (InfinitePlace.Completion.ringEquivComplexOfIsComplex hw).symm
+  have hp := (complexLocalEulerParameters w hw
+    (sLocalInfiniteRestriction w (chartₛ(χ) 0))).exists.choose_spec
+  obtain ⟨p, hpdef⟩ : ∃ p : ℂ × ℤ, p = (complexLocalEulerParameters w hw
+    (sLocalInfiniteRestriction w (chartₛ(χ) 0))).exists.choose := ⟨_, rfl⟩
+  rw [← hpdef] at hp
+  refine ⟨p.1 + (p.2.natAbs : ℂ) / 2, fun z ↦ ?_⟩
+  have hshape : ∀ x : ℂˣ, sLocalInfiniteRestriction w (chartₛ(χ) z)
+      (Units.map e.toMonoidHom x) =
+        ((‖(x : ℂ)‖ ^ 2 : ℝ) : ℂ) ^ (z + p.1) * ((x : ℂ) / (‖(x : ℂ)‖ : ℂ)) ^ p.2 := by
+    intro x
+    have hn : ‖(e (x : ℂ) : w.Completion)‖ = ‖(x : ℂ)‖ :=
+      (InfinitePlace.Completion.isometryEquivComplexOfIsComplex
+        hw).symm.isometry.norm_map_of_map_zero (map_zero e) (x : ℂ)
+    have hm : (((Units.map nnNormHom.toMonoidHom ^ w.mult : w.Completionˣ →* ℝ≥0ˣ)
+        (Units.map e.toMonoidHom x) : ℝ≥0) : ℝ) = ‖(x : ℂ)‖ ^ 2 := by
+      simp [InfinitePlace.mult, InfinitePlace.not_isReal_iff_isComplex.mpr hw, hn]
+    rw [sLocalInfiniteRestriction_chart_apply, hp x, hm,
+      Complex.cpow_add _ _ (Complex.ofReal_ne_zero.mpr
+        (pow_ne_zero _ (norm_ne_zero_iff.mpr x.ne_zero)))]
+    ring
+  have hq := (complexLocalEulerParameters w hw
+      (sLocalInfiniteRestriction w (chartₛ(χ) z))).unique
+    (complexLocalEulerParameters w hw
+      (sLocalInfiniteRestriction w (chartₛ(χ) z))).exists.choose_spec
+    (y₂ := (z + p.1, p.2)) hshape
+  simp only [infiniteLocalEulerFactor, InfinitePlace.not_isReal_iff_isComplex.mpr hw,
+    ↓reduceDIte, hq, add_assoc]
+
+/-- For orders bounded below by minus one, the negative parts sum to minus the number of
+negative orders. -/
+private theorem neg_card_filter_eq_sum_min {ι : Type*} [Fintype ι] (ord : ι → WithTop ℤ)
+    [DecidablePred fun i ↦ ord i < 0] (h : ∀ i, ((-1 : ℤ) : WithTop ℤ) ≤ ord i) :
+    ((-((Finset.univ.filter fun i ↦ ord i < 0).card : ℤ) : ℤ) : WithTop ℤ) =
+      ∑ i, min 0 (ord i) := by
+  have hneg : ∀ i ∈ Finset.univ.filter (fun i ↦ ord i < 0),
+      min 0 (ord i) = ((-1 : ℤ) : WithTop ℤ) := by
+    intro i hi
+    have hi' : ord i < 0 := (Finset.mem_filter.mp hi).2
+    rw [min_eq_right hi'.le]
+    refine le_antisymm ?_ (h i)
+    cases hn : ord i with
+    | top =>
+      rw [hn] at hi'
+      exact absurd hi' not_top_lt
+    | coe n =>
+      rw [hn] at hi'
+      have h0 : n < 0 := by exact_mod_cast hi'
+      exact_mod_cast (by omega : n ≤ -1)
+  have hpos : ∀ i ∈ Finset.univ.filter (fun i ↦ ¬ ord i < 0), min 0 (ord i) = 0 := fun i hi ↦
+    min_eq_left (not_lt.mp (Finset.mem_filter.mp hi).2)
+  rw [← Finset.sum_filter_add_sum_filter_not Finset.univ (fun i ↦ ord i < 0),
+    Finset.sum_congr rfl hneg, Finset.sum_eq_zero hpos, add_zero, Finset.sum_const,
+    ← WithTop.coe_nsmul]
+  congr 1
+  simp
+
+/-- Along a norm-twist chart, every pole of an archimedean Euler factor is simple. -/
+private theorem neg_one_le_meromorphicOrderAt_infiniteLocalEulerFactor_chart
+    (χ : PontryaginDual Jₛ) (w : InfinitePlace F) (s : ℂ) :
+    ((-1 : ℤ) : WithTop ℤ) ≤ meromorphicOrderAt (fun z ↦ infiniteLocalEulerFactor w
+      (sLocalInfiniteRestriction w (chartₛ(χ) z))) s := by
+  by_cases hw : w.IsReal
+  · obtain ⟨b, hb⟩ := infiniteLocalEulerFactor_chart_real χ w hw
+    have hfun : (fun z ↦ infiniteLocalEulerFactor w
+        (sLocalInfiniteRestriction w (chartₛ(χ) z))) = Complex.Gammaℝ ∘ (· + b) := funext hb
+    rw [hfun, meromorphicOrderAt_comp_add_const_eq_meromorphicOrderAt]
+    exact neg_one_le_meromorphicOrderAt_Gammaℝ _
+  · obtain ⟨b, hb⟩ := infiniteLocalEulerFactor_chart_complex χ w
+      (InfinitePlace.not_isReal_iff_isComplex.mp hw)
+    have hfun : (fun z ↦ infiniteLocalEulerFactor w
+        (sLocalInfiniteRestriction w (chartₛ(χ) z))) =
+        (fun _ : ℂ ↦ (2 : ℂ)⁻¹) * (Complex.Gammaℂ ∘ (· + b)) :=
+      funext fun z ↦ (hb z).trans (div_eq_inv_mul _ _)
+    rw [hfun, meromorphicOrderAt_mul_of_ne_zero analyticAt_const (inv_ne_zero two_ne_zero),
+      meromorphicOrderAt_comp_add_const_eq_meromorphicOrderAt]
+    exact neg_one_le_meromorphicOrderAt_Gammaℂ _
+
 /-- Paper: Proposition 5.3.4.5(2), p. 264.
 The negative of the allowed pole multiplicity is the sum of the negative parts
 of the meromorphic orders of the local archimedean Euler factors. -/
@@ -766,7 +1104,10 @@ theorem sLocalArchimedeanPoleMultiplicity_eq_sum (χ : PontryaginDual Jₛ) (s :
     (↑(-(sLocalArchimedeanPoleMultiplicity χ s : ℤ)) : WithTop ℤ) =
       ∑ w : InfinitePlace F, min 0
         (meromorphicOrderAt (fun z ↦ infiniteLocalEulerFactor w
-          (sLocalInfiniteRestriction w (chartₛ(χ) z))) s) := by sorry
+          (sLocalInfiniteRestriction w (chartₛ(χ) z))) s) := by
+  rw [sLocalArchimedeanPoleMultiplicity]
+  exact neg_card_filter_eq_sum_min _ fun w ↦
+    neg_one_le_meromorphicOrderAt_infiniteLocalEulerFactor_chart χ w s
 
 /-- Paper: Proposition 5.3.4.5(2), p. 264.
 After all finite principal values, the zeta pole order is bounded by the total
